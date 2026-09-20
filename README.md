@@ -67,9 +67,10 @@ npm run typecheck
 npm run lint
 npm run format:check
 npm test
+npm run build:check
 ```
 
-`npm run format` applies Prettier formatting. The automated checks exercise deterministic signal-processing code; physical sensor behavior must still be confirmed on Android hardware.
+`npm run format` applies Prettier formatting. `npm run build:check` exports the Android JavaScript bundle without committing generated output. The automated checks exercise deterministic signal-processing code; physical sensor behavior must still be confirmed on Android hardware.
 
 ## Architecture
 

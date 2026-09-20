@@ -22,6 +22,7 @@
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
+    "build:check": "expo export --platform android --output-dir dist",
     "test": "jest --runInBand",
     "test:watch": "jest",
     "typecheck": "tsc --noEmit",

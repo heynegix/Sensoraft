@@ -1,5 +1,6 @@
 import { DEFAULT_SIGNAL_CONFIG, type SignalProcessingConfig } from '../signal/constants';
 import { VibrationSignalProcessor, type ProcessedSignal } from '../signal/processor';
+import type { AccelerometerSample } from '../sensors/types';
 
 import type { InstrumentDefinition } from './types';
 
@@ -27,7 +28,7 @@ export class VibrationMeterEngine {
     this.processor = new VibrationSignalProcessor(config);
   }
 
-  public process(sample: Parameters<VibrationSignalProcessor['process']>[0]): ProcessedSignal {
+  public process(sample: AccelerometerSample): ProcessedSignal {
     return this.processor.process(sample);
   }
 

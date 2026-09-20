@@ -34,3 +34,6 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+      - name: Android bundle check
+        run: npm run build:check

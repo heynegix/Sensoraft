@@ -40,7 +40,7 @@ Excluded from this phase:
 - [ ] Stop changes the state to `STOPPED` and removes the subscription.
 - [ ] Repeated Start / Stop does not duplicate chart updates.
 - [ ] A device without an accelerometer gets an explanatory error.
-- [ ] `npm run typecheck`, `npm run lint`, `npm run format:check`, and `npm test` pass.
+- [ ] `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test`, and `npm run build:check` pass.
 
 ## Tunable settings
 
