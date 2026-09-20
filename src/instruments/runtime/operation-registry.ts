@@ -2,6 +2,7 @@ import { VectorBaselineCompensator } from '../../signal/gravity-compensation';
 import { magnitude, type Vector3 } from '../../signal/magnitude';
 import { MovingAverageFilter } from '../../signal/moving-average';
 import { RmsFilter } from '../../signal/rms';
+import { SUPPORTED_SENSOR_TYPES } from '../../sensors/types';
 import { InstrumentCompileError, InstrumentValidationError } from '../dsl/errors';
 import type {
   GravityCompensationOperation,
@@ -10,6 +11,7 @@ import type {
   PipelineOperation,
   PipelineValueType,
   RmsOperation,
+  SensorType,
   ScaleOperation,
   TransformType,
 } from '../dsl/types';
@@ -27,6 +29,7 @@ export interface OperationDefinition {
   readonly name: TransformType;
   readonly inputType: PipelineValueType;
   readonly outputType: PipelineValueType;
+  readonly supportedSensors: readonly SensorType[];
   normalize(raw: Readonly<Record<string, unknown>>, path: string): PipelineOperation;
   createProcessor(operation: PipelineOperation): CompiledOperation;
 }
@@ -100,6 +103,7 @@ const gravityCompensation: OperationDefinition = {
   name: 'gravityCompensation',
   inputType: 'vector3',
   outputType: 'vector3',
+  supportedSensors: ['accelerometer'],
   normalize(raw, path): GravityCompensationOperation {
     assertKnownKeys(raw, ['op', 'alpha'], path);
     if (own(raw, 'alpha') === undefined) {
@@ -132,6 +136,7 @@ const magnitudeOperation: OperationDefinition = {
   name: 'magnitude',
   inputType: 'vector3',
   outputType: 'scalar',
+  supportedSensors: SUPPORTED_SENSOR_TYPES,
   normalize(raw, path): MagnitudeOperation {
     assertKnownKeys(raw, ['op'], path);
     return { op: 'magnitude' };
@@ -151,6 +156,7 @@ const movingAverageOperation: OperationDefinition = {
   name: 'movingAverage',
   inputType: 'scalar',
   outputType: 'scalar',
+  supportedSensors: SUPPORTED_SENSOR_TYPES,
   normalize(raw, path): MovingAverageOperation {
     assertKnownKeys(raw, ['op', 'windowSize'], path);
     return {
@@ -177,6 +183,7 @@ const rmsOperation: OperationDefinition = {
   name: 'rms',
   inputType: 'scalar',
   outputType: 'scalar',
+  supportedSensors: SUPPORTED_SENSOR_TYPES,
   normalize(raw, path): RmsOperation {
     assertKnownKeys(raw, ['op', 'windowSize'], path);
     return {
@@ -203,6 +210,7 @@ const scaleOperation: OperationDefinition = {
   name: 'scale',
   inputType: 'scalar',
   outputType: 'scalar',
+  supportedSensors: SUPPORTED_SENSOR_TYPES,
   normalize(raw, path): ScaleOperation {
     assertKnownKeys(raw, ['op', 'factor'], path);
     return {

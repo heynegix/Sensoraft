@@ -2,7 +2,7 @@
 
 The Instrument DSL is a small, declarative description of a sensor, an approved signal pipeline, and a display. It is the boundary between future AI-generated JSON and the Sensoraft measurement engine.
 
-The current implementation supports only the accelerometer, but the schema keeps the sensor field extensible for future sensors.
+Version 1 formally supports accelerometer, gyroscope, and magnetometer vector sensors. The sensor field remains extensible for future scalar sensors such as a barometer, but unsupported sensor types are rejected.
 
 ## Runtime flow
 
@@ -61,15 +61,13 @@ description and display.precision are normalized when omitted. The required fiel
 
 ## Supported sensors
 
-| Sensor        | Status                               |
-| ------------- | ------------------------------------ |
-| accelerometer | Supported in v1                      |
-| gyroscope     | Reserved for a future sensor adapter |
-| magnetometer  | Reserved for a future sensor adapter |
-| barometer     | Reserved for a future sensor adapter |
-| microphone    | Reserved for a future sensor adapter |
+| Sensor        | Unit for raw axes | Status          |
+| ------------- | ----------------- | --------------- |
+| accelerometer | g                 | Supported in v1 |
+| gyroscope     | rad/s             | Supported in v1 |
+| magnetometer  | μT                | Supported in v1 |
 
-sampleRateHz must be an integer from 1 through 100. This is converted to the Expo sensor update interval before the runtime starts.
+`sampleRateHz` must be an integer from 1 through 100. This is converted to the Expo sensor update interval before the runtime starts. The current vector adapters normalize Expo's sensor timestamps from seconds to milliseconds for the runtime.
 
 ## Supported operations
 
@@ -85,7 +83,7 @@ Gravity compensation is deliberately vector-first: the runtime estimates the thr
 
 ## Type flow validation
 
-The accelerometer starts every pipeline as Vector3. The compiler checks every operation input and output type and requires the final value to be a Scalar for the current display system.
+Every supported vector sensor starts every pipeline as Vector3. The compiler checks every operation input and output type, checks sensor-specific operation support, and requires the final value to be a Scalar for the current display system.
 
 For example, this is rejected before a sensor subscription is created:
 
@@ -101,6 +99,20 @@ The validator reports:
 
     Pipeline type mismatch: gravityCompensation expects Vector3 but received Scalar.
 
+Even when the value types connect, an operation can be rejected for the selected sensor. For example, `gravityCompensation` is accelerometer-only:
+
+    Operation gravityCompensation is not supported for sensor type gyroscope.
+
+## Sensor compatibility matrix
+
+| Operation           | Accelerometer | Gyroscope | Magnetometer |
+| ------------------- | ------------- | --------- | ------------ |
+| gravityCompensation | yes           | no        | no           |
+| magnitude           | yes           | yes       | yes          |
+| movingAverage       | yes           | yes       | yes          |
+| rms                 | yes           | yes       | yes          |
+| scale               | yes           | yes       | yes          |
+
 ## Validation rules
 
 - Only version 1 is accepted.
@@ -109,11 +121,12 @@ The validator reports:
 - Unknown operations are rejected.
 - Empty pipelines are rejected.
 - Pipelines are limited to 20 operations.
-- Accelerometer sample rate is limited to 1–100 Hz.
+- Supported sensor sample rates are limited to 1–100 Hz.
 - gravityCompensation.alpha is required and must satisfy 0 < alpha <= 1.
 - movingAverage.windowSize and rms.windowSize are required integers from 1 through 500.
 - scale.factor and display precision must be finite numbers.
 - NaN and Infinity are rejected for definition values and runtime sensor samples.
+- An operation must explicitly support the selected sensor; gravity compensation is accelerometer-only.
 - A pipeline must be type-compatible and end in a scalar value.
 
 Validation errors use InstrumentValidationError and retain an issues array so a future UI can show actionable field-level feedback without displaying raw exceptions.
@@ -130,8 +143,14 @@ Adding an operation requires an explicit registry entry, a typed DSL variant, va
 
 compileInstrument creates a CompiledInstrument containing the already-created processors. InstrumentRuntime owns that compiled instrument and one sensor controller. start resets the pipeline state and subscribes to the sensor; stop cancels pending starts, removes the subscription, and resets state; dispose permanently stops the runtime.
 
-The UI receives only compiled measurements with timestamp, value, and raw sensor data plus runtime status/error callbacks. It does not assemble gravity compensation, magnitude, moving average, RMS, or scale processors.
+The UI receives only compiled measurements with timestamp, value, and raw sensor data plus runtime status/error callbacks. It does not assemble gravity compensation, magnitude, moving average, RMS, or scale processors. The built-in picker passes Vibration Meter, Rotation Meter, and Magnetic Field Meter definitions through the same runtime and generic screen.
+
+## Sensor adapter behavior
+
+Each supported sensor uses the same controller contract: availability is checked before start, the configured sample rate is converted to an update interval, `addListener` is used for samples, and the returned subscription is removed on Stop and dispose. A device without the selected hardware sensor receives a controlled sensor-specific error in the UI. Physical Android hardware is required for meaningful acceptance testing; simulator or emulator sensor behavior is not assumed.
+
+Sensor units and the Expo API behavior used by these adapters follow the official [Accelerometer](https://docs.expo.dev/versions/v57.0.0/sdk/accelerometer/), [Gyroscope](https://docs.expo.dev/versions/v57.0.0/sdk/gyroscope/), and [Magnetometer](https://docs.expo.dev/versions/v57.0.0/sdk/magnetometer/) documentation.
 
 ## Future extensions
 
-Future operations such as lowPass, threshold, peak, fft, or integrate should be added through the registry with explicit types and bounded configuration. Future sensor adapters should be connected through the sensor factory and controller interface. AI generation belongs outside this runtime and must produce only validated DSL data.
+Future operations such as lowPass, threshold, peak, fft, or integrate should be added through the registry with explicit types and bounded configuration. Future sensor adapters should be connected through the sensor factory and controller interface. A future scalar sensor can introduce a scalar sample type without changing the existing vector pipeline contracts. AI generation belongs outside this runtime and must produce only validated DSL data.

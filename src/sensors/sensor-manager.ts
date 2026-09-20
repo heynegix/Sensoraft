@@ -1,7 +1,7 @@
 import type { SensorAdapter, SensorController, SensorSubscription } from './types';
 
 export class SensorUnavailableError extends Error {
-  public constructor(sensorName: string) {
+  public constructor(public readonly sensorName: string) {
     super(`${sensorName} is not available on this device.`);
     this.name = 'SensorUnavailableError';
   }

@@ -1,9 +1,19 @@
 import { compileInstrument } from '../src/instruments/runtime/compiler';
 import { InstrumentRuntime } from '../src/instruments/runtime/runtime';
-import { VIBRATION_METER_DEFINITION } from '../src/instruments/definitions/vibration-meter';
+import {
+  BUILT_IN_INSTRUMENTS,
+  MAGNETIC_FIELD_METER_DEFINITION,
+  ROTATION_METER_DEFINITION,
+  VIBRATION_METER_DEFINITION,
+} from '../src/instruments/definitions';
 import { parseInstrumentDefinition } from '../src/instruments/dsl/parser';
 import { validateInstrumentDefinition } from '../src/instruments/dsl/validator';
-import type { AccelerometerSample, SensorController } from '../src/sensors/types';
+import { AccelerometerSource } from '../src/sensors/accelerometer';
+import { GyroscopeSource } from '../src/sensors/gyroscope';
+import { MagnetometerSource } from '../src/sensors/magnetometer';
+import { Vector3SensorSource } from '../src/sensors/vector3-source';
+import { createSensorAdapter, toSensorIntervalMs } from '../src/instruments/runtime/sensor-factory';
+import type { SensorController, SensorSample } from '../src/sensors/types';
 
 const VALID_PIPELINE = [
   { op: 'gravityCompensation', alpha: 0.04 },
@@ -41,6 +51,22 @@ function withSensor(sensor: unknown): string {
   return JSON.stringify({ ...base, sensor });
 }
 
+function withSensorPipeline(
+  sensorType: string,
+  pipeline: readonly unknown[],
+  unit: string,
+): string {
+  const base = JSON.parse(VALID_DEFINITION_JSON) as Record<string, unknown>;
+  const display = base.display as Record<string, unknown>;
+
+  return JSON.stringify({
+    ...base,
+    sensor: { type: sensorType, sampleRateHz: 20 },
+    pipeline,
+    display: { ...display, unit },
+  });
+}
+
 describe('Instrument DSL validation and compilation', () => {
   it('parses JSON, validates, compiles, and runs a declarative pipeline', () => {
     const definition = parseInstrumentDefinition(VALID_DEFINITION_JSON);
@@ -72,6 +98,31 @@ describe('Instrument DSL validation and compilation', () => {
     }
 
     expect(measurement.value).toBeGreaterThan(0.5);
+  });
+
+  it('accepts gyroscope and magnetometer definitions', () => {
+    const gyroscope = parseInstrumentDefinition(
+      withSensorPipeline('gyroscope', [{ op: 'magnitude' }], 'rad/s'),
+    );
+    const magnetometer = parseInstrumentDefinition(
+      withSensorPipeline('magnetometer', [{ op: 'magnitude' }], 'μT'),
+    );
+
+    expect(gyroscope.sensor.type).toBe('gyroscope');
+    expect(magnetometer.sensor.type).toBe('magnetometer');
+    expect(() => compileInstrument(gyroscope)).not.toThrow();
+    expect(() => compileInstrument(magnetometer)).not.toThrow();
+  });
+
+  it('validates and compiles every built-in instrument definition', () => {
+    expect(BUILT_IN_INSTRUMENTS).toHaveLength(3);
+
+    for (const definition of BUILT_IN_INSTRUMENTS) {
+      expect(() => compileInstrument(definition)).not.toThrow();
+    }
+
+    expect(ROTATION_METER_DEFINITION.sensor.type).toBe('gyroscope');
+    expect(MAGNETIC_FIELD_METER_DEFINITION.sensor.type).toBe('magnetometer');
   });
 
   it('rejects unknown operations', () => {
@@ -145,12 +196,26 @@ describe('Instrument DSL validation and compilation', () => {
 
   it('rejects invalid sensors and empty pipelines', () => {
     expect(() =>
-      parseInstrumentDefinition(withSensor({ type: 'gyroscope', sampleRateHz: 20 })),
-    ).toThrow('Unsupported sensor type: gyroscope');
+      parseInstrumentDefinition(withSensor({ type: 'barometer', sampleRateHz: 20 })),
+    ).toThrow('Unsupported sensor type: barometer');
 
     expect(() => parseInstrumentDefinition(withPipeline([]))).toThrow(
       'pipeline must contain at least one operation',
     );
+  });
+
+  it('rejects gravity compensation for gyroscope and magnetometer', () => {
+    for (const sensorType of ['gyroscope', 'magnetometer']) {
+      expect(() =>
+        parseInstrumentDefinition(
+          withSensorPipeline(
+            sensorType,
+            [{ op: 'gravityCompensation', alpha: 0.04 }, { op: 'magnitude' }],
+            'unit',
+          ),
+        ),
+      ).toThrow('Operation gravityCompensation is not supported for sensor type ' + sensorType);
+    }
   });
 
   it('rejects non-finite sensor samples at runtime', () => {
@@ -190,13 +255,13 @@ describe('Instrument DSL validation and compilation', () => {
   });
 });
 
-class FakeSensorController implements SensorController<AccelerometerSample> {
+class FakeSensorController implements SensorController<SensorSample> {
   public isRunning = false;
   public startCalls = 0;
   public stopCalls = 0;
-  private listener: ((sample: AccelerometerSample) => void) | null = null;
+  private listener: ((sample: SensorSample) => void) | null = null;
 
-  public start(listener: (sample: AccelerometerSample) => void): Promise<boolean> {
+  public start(listener: (sample: SensorSample) => void): Promise<boolean> {
     this.startCalls += 1;
     this.listener = listener;
     this.isRunning = true;
@@ -209,16 +274,16 @@ class FakeSensorController implements SensorController<AccelerometerSample> {
     this.isRunning = false;
   }
 
-  public emit(sample: AccelerometerSample): void {
+  public emit(sample: SensorSample): void {
     this.listener?.(sample);
   }
 }
 
-class DeferredSensorController implements SensorController<AccelerometerSample> {
+class DeferredSensorController implements SensorController<SensorSample> {
   public isRunning = false;
   public release: ((started: boolean) => void) | null = null;
 
-  public start(listener: (sample: AccelerometerSample) => void): Promise<boolean> {
+  public start(listener: (sample: SensorSample) => void): Promise<boolean> {
     void listener;
     return new Promise((resolve) => {
       this.release = resolve;
@@ -267,5 +332,70 @@ describe('InstrumentRuntime lifecycle', () => {
 
     await expect(startPromise).resolves.toBe(false);
     expect(runtime.isRunning).toBe(false);
+  });
+});
+
+describe('Sensor factory and vector runtime', () => {
+  it('maps each supported sensor and preserves the configured sample interval', () => {
+    expect(createSensorAdapter('accelerometer', 50)).toBeInstanceOf(AccelerometerSource);
+    expect(createSensorAdapter('gyroscope', 50)).toBeInstanceOf(GyroscopeSource);
+    expect(createSensorAdapter('magnetometer', 50)).toBeInstanceOf(MagnetometerSource);
+    expect(toSensorIntervalMs(20)).toBe(50);
+    expect(toSensorIntervalMs(100)).toBe(10);
+  });
+
+  it('processes gyroscope and magnetometer vector samples through the shared runtime', async () => {
+    for (const [sensorType, unit] of [
+      ['gyroscope', 'rad/s'],
+      ['magnetometer', 'μT'],
+    ] as const) {
+      const controller = new FakeSensorController();
+      const runtime = new InstrumentRuntime(
+        parseInstrumentDefinition(withSensorPipeline(sensorType, [{ op: 'magnitude' }], unit)),
+        { sensorController: controller },
+      );
+      const listener = jest.fn();
+
+      await expect(runtime.start(listener)).resolves.toBe(true);
+      controller.emit({ x: 0.3, y: 0.4, z: 0, timestamp: 123 });
+
+      expect(listener).toHaveBeenCalledWith(
+        expect.objectContaining({
+          value: 0.5,
+          raw: { x: 0.3, y: 0.4, z: 0, timestamp: 123 },
+        }),
+      );
+      runtime.dispose();
+    }
+  });
+
+  it('normalizes Expo timestamps and removes vector sensor subscriptions', async () => {
+    let emit:
+      ((measurement: { x: number; y: number; z: number; timestamp: number }) => void) | undefined;
+    const remove = jest.fn();
+    const sensor = {
+      isAvailableAsync: jest.fn().mockResolvedValue(true),
+      setUpdateInterval: jest.fn(),
+      addListener: jest.fn(
+        (
+          listener: (measurement: { x: number; y: number; z: number; timestamp: number }) => void,
+        ) => {
+          emit = listener;
+          return { remove };
+        },
+      ),
+    };
+    const source = new Vector3SensorSource(sensor, 50);
+    const samples: SensorSample[] = [];
+
+    await expect(source.isAvailable()).resolves.toBe(true);
+    const subscription = source.subscribe((sample) => samples.push(sample));
+    emit?.({ x: 1, y: -2, z: 3, timestamp: 1.25 });
+
+    expect(sensor.setUpdateInterval).toHaveBeenCalledWith(50);
+    expect(samples).toEqual([{ x: 1, y: -2, z: 3, timestamp: 1250 }]);
+
+    subscription.remove();
+    expect(remove).toHaveBeenCalledTimes(1);
   });
 });
