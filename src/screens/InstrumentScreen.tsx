@@ -24,6 +24,10 @@ const INITIAL_MEASUREMENT: InstrumentMeasurement = {
   },
 };
 
+// Built-in instruments sample at 20 Hz; this still renders every built-in sample
+// while capping future 100 Hz definitions at 25 UI updates per second.
+const UI_UPDATE_INTERVAL_MS = 40;
+
 interface InstrumentScreenProps {
   readonly definition: InstrumentDefinition;
   readonly onBack?: () => void;
@@ -60,6 +64,7 @@ function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) 
   const [history, setHistory] = useState<number[]>([]);
   const mountedRef = useRef(true);
   const startTokenRef = useRef(0);
+  const lastUiUpdateTimestampRef = useRef<number | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -77,6 +82,7 @@ function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) 
     setErrorMessage(null);
     setMeasurement(INITIAL_MEASUREMENT);
     setHistory([]);
+    lastUiUpdateTimestampRef.current = null;
   }, [runtime]);
 
   const startMeasurement = useCallback(async () => {
@@ -94,6 +100,7 @@ function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) 
     setErrorMessage(null);
     setMeasurement(INITIAL_MEASUREMENT);
     setHistory([]);
+    lastUiUpdateTimestampRef.current = null;
 
     try {
       const started = await runtime.start(
@@ -101,6 +108,15 @@ function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) 
           if (!mountedRef.current || startToken !== startTokenRef.current) {
             return;
           }
+
+          const lastUiUpdateTimestamp = lastUiUpdateTimestampRef.current;
+          if (
+            lastUiUpdateTimestamp !== null &&
+            nextMeasurement.timestamp - lastUiUpdateTimestamp < UI_UPDATE_INTERVAL_MS
+          ) {
+            return;
+          }
+          lastUiUpdateTimestampRef.current = nextMeasurement.timestamp;
 
           setMeasurement(nextMeasurement);
           setHistory((current) => {
