@@ -60,7 +60,7 @@ An unsupported result has `status: "unsupported"`, a short `reason`, and `instru
 
 Gemini output is untrusted input. Structured Output limits the response shape, but it is not the final authority. The Worker rejects unknown sensors, operations, fields, invalid numeric ranges, incompatible sensor-operation pairs, non-finite values, oversized strings, and invalid type flow. The app repeats semantic validation and compilation. No generated code, expressions, imports, plugins, or executable content are accepted. There is no `eval`, `new Function`, dynamic import, or remote plugin loading.
 
-Prompts are limited to 500 characters. Requests have a bounded body and an 18-second upstream timeout. A failed semantic validation may trigger one repair request at most; there is no retry loop. The app ignores stale generation responses after a newer request or after leaving the screen. Sensor samples, sensor history, device identifiers, and prompt history are not sent to the Worker. Responses are marked `no-store`.
+Prompts are limited to 500 characters. Requests have a streamed bounded body, an 18-second upstream timeout, and Cloudflare Rate Limiting bindings before Gemini is invoked: five requests per client per minute and thirty total generation attempts per minute in each Cloudflare location. The Worker fails closed with `503` if those bindings are not configured and returns `429` without calling Gemini when a limit is reached. A failed semantic validation may trigger one repair request at most; there is no retry loop. The app ignores stale generation responses after a newer request or after leaving the screen. Sensor samples, sensor history, device identifiers, and prompt history are not sent to the Worker. Responses are marked `no-store`.
 
 ## Cloudflare Worker setup
 
@@ -74,6 +74,8 @@ npx wrangler deploy
 ```
 
 `GEMINI_MODEL` is a non-secret Worker variable and defaults to `gemini-3.5-flash-lite`; change it in `worker/wrangler.jsonc` or the Worker environment when needed. Never put `GEMINI_API_KEY` in the app environment, `app.json`, source code, or Git.
+
+`worker/wrangler.jsonc` declares the `AI_CLIENT_RATE_LIMITER` and `AI_GLOBAL_RATE_LIMITER` bindings. The example namespace IDs (`1001` and `1002`) must be unused positive integer namespaces in the deploying Cloudflare account; change them if necessary before deployment. These bindings are the server-side abuse-control boundary for the public mobile endpoint.
 
 For local Worker development, copy `.dev.vars.example` to `.dev.vars`, add the secret locally, and run `npm run dev`. `.dev.vars` is ignored. The repository tests mock the Gemini HTTP call and never contact Gemini.
 

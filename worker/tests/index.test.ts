@@ -1,10 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import worker, { handleGenerate } from '../src/index';
+import { GEMINI_RESPONSE_FORMAT } from '../src/schema';
 
 const env = {
   GEMINI_API_KEY: 'test-key',
   GEMINI_MODEL: 'gemini-3.5-flash-lite',
+  AI_CLIENT_RATE_LIMITER: {
+    limit: vi.fn().mockResolvedValue({ success: true }),
+  },
+  AI_GLOBAL_RATE_LIMITER: {
+    limit: vi.fn().mockResolvedValue({ success: true }),
+  },
 };
 
 const validInstrument = {
@@ -128,9 +135,54 @@ describe('Worker /generate boundary', () => {
     expect(await readJson(response)).toMatchObject({ status: 'unsupported', instrument: null });
   });
 
+  it('rejects a request when either rate limit is exceeded before Gemini is called', async () => {
+    const fetchImpl = geminiFetch({});
+    const limitedEnv = {
+      ...env,
+      AI_CLIENT_RATE_LIMITER: {
+        limit: vi.fn().mockResolvedValue({ success: false }),
+      },
+    };
+    const response = await handleGenerate(
+      request(JSON.stringify({ prompt: 'measure motion' })),
+      limitedEnv,
+      { fetchImpl },
+    );
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get('Retry-After')).toBe('60');
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when rate limiting bindings are not configured', async () => {
+    const fetchImpl = geminiFetch({});
+    const response = await handleGenerate(
+      request(JSON.stringify({ prompt: 'measure motion' })),
+      { GEMINI_API_KEY: 'test-key' },
+      { fetchImpl },
+    );
+
+    expect(response.status).toBe(503);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['unknown sensor', { ...validInstrument, sensor: { type: 'barometer', sampleRateHz: 20 } }],
     ['unknown operation', { ...validInstrument, pipeline: [{ op: 'fooOperation' }] }],
+    [
+      'zero alpha',
+      {
+        ...validInstrument,
+        pipeline: [{ op: 'gravityCompensation', alpha: 0 }, { op: 'magnitude' }],
+      },
+    ],
+    [
+      'large scale factor',
+      {
+        ...validInstrument,
+        pipeline: [{ op: 'magnitude' }, { op: 'scale', factor: 1000.001 }],
+      },
+    ],
     [
       'incompatible operation',
       {
@@ -155,6 +207,33 @@ describe('Worker /generate boundary', () => {
     expect(await readJson(response)).toMatchObject({
       error: { code: 'MODEL_OUTPUT_INVALID' },
     });
+  });
+
+  it('keeps Structured Output numeric bounds aligned with the runtime validator', () => {
+    type NumericSchema = { minimum?: number; maximum?: number };
+    type OperationSchema = { properties?: Record<string, NumericSchema> };
+    const schema = GEMINI_RESPONSE_FORMAT[0].schema as unknown as {
+      properties: {
+        instrument: {
+          anyOf: Array<{
+            properties?: {
+              pipeline?: { items?: { anyOf?: OperationSchema[] } };
+            };
+          }>;
+        };
+      };
+    };
+    const operationSchemas =
+      schema.properties.instrument.anyOf[0]?.properties?.pipeline?.items?.anyOf ?? [];
+    const alphaSchema = operationSchemas.find(
+      (operation) => operation.properties?.alpha !== undefined,
+    );
+    const scaleSchema = operationSchemas.find(
+      (operation) => operation.properties?.factor !== undefined,
+    );
+
+    expect(alphaSchema?.properties?.alpha).toMatchObject({ minimum: 0.000001, maximum: 1 });
+    expect(scaleSchema?.properties?.factor).toMatchObject({ minimum: -1000, maximum: 1000 });
   });
 
   it('maps Gemini failures and timeouts to generic errors', async () => {

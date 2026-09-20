@@ -6,6 +6,7 @@ import {
   MAX_REASON_LENGTH,
   MAX_REPAIR_ISSUES,
   MAX_REQUEST_BODY_BYTES,
+  type RateLimitBinding,
   type WorkerEnv,
 } from './schema';
 
@@ -141,7 +142,10 @@ function validateOperation(
     readWindowSize(own(value, 'windowSize'), path + '.windowSize', issues);
   } else {
     addUnknownKeys(value, ['op', 'factor'], path, issues);
-    readFiniteNumber(own(value, 'factor'), path + '.factor', issues);
+    const factor = readFiniteNumber(own(value, 'factor'), path + '.factor', issues);
+    if (factor !== undefined && Math.abs(factor) > 1000) {
+      issues.push(path + '.factor must be between -1000 and 1000.');
+    }
   }
 
   if (inputType !== currentType) {
@@ -282,22 +286,66 @@ function validateGenerationResult(value: unknown): JsonObject {
   return value;
 }
 
-function jsonResponse(body: JsonObject, status: number): Response {
+function jsonResponse(
+  body: JsonObject,
+  status: number,
+  extraHeaders: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',
+      ...extraHeaders,
     },
   });
 }
 
-function errorResponse(code: string, message: string, status: number, issues?: readonly string[]) {
+function errorResponse(
+  code: string,
+  message: string,
+  status: number,
+  issues?: readonly string[],
+  extraHeaders: Record<string, string> = {},
+) {
   const error: JsonObject = { code, message };
   if (issues !== undefined) {
     error.issues = issues;
   }
-  return jsonResponse({ error }, status);
+  return jsonResponse({ error }, status, extraHeaders);
+}
+
+async function enforceRateLimits(request: Request, env: WorkerEnv): Promise<Response | null> {
+  const clientLimiter: RateLimitBinding | undefined = env.AI_CLIENT_RATE_LIMITER;
+  const globalLimiter: RateLimitBinding | undefined = env.AI_GLOBAL_RATE_LIMITER;
+  if (clientLimiter === undefined || globalLimiter === undefined) {
+    return errorResponse('RATE_LIMIT_UNAVAILABLE', 'Instrument generation is not configured.', 503);
+  }
+
+  const clientKey = request.headers.get('cf-connecting-ip')?.trim() || 'anonymous';
+  try {
+    const [clientResult, globalResult] = await Promise.all([
+      clientLimiter.limit({ key: clientKey }),
+      globalLimiter.limit({ key: 'all-generations' }),
+    ]);
+    if (!clientResult.success || !globalResult.success) {
+      return errorResponse(
+        'RATE_LIMITED',
+        'Too many instrument generation requests. Try again later.',
+        429,
+        undefined,
+        { 'Retry-After': '60' },
+      );
+    }
+  } catch {
+    return errorResponse(
+      'RATE_LIMIT_UNAVAILABLE',
+      'Instrument generation is temporarily unavailable.',
+      503,
+    );
+  }
+
+  return null;
 }
 
 function parseRequestBody(value: unknown): { prompt: string; repairIssues?: string[] } {
@@ -388,6 +436,11 @@ async function handleGenerate(
       return errorResponse('INVALID_REPAIR', 'Repair issues are invalid.', 400);
     }
     return errorResponse('INVALID_BODY', 'Request body is invalid.', 400);
+  }
+
+  const rateLimitResponse = await enforceRateLimits(request, env);
+  if (rateLimitResponse !== null) {
+    return rateLimitResponse;
   }
 
   const controller = new AbortController();

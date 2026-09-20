@@ -154,6 +154,13 @@ describe('Instrument DSL validation and compilation', () => {
     ).toThrow('finite number');
 
     expect(() =>
+      validateInstrumentDefinition({
+        ...JSON.parse(VALID_DEFINITION_JSON),
+        pipeline: [...VALID_PIPELINE.slice(0, -1), { op: 'scale', factor: 1000.001 }],
+      }),
+    ).toThrow('between -1000 and 1000');
+
+    expect(() =>
       parseInstrumentDefinition(
         withPipeline([
           { op: 'gravityCompensation', alpha: 0.04 },

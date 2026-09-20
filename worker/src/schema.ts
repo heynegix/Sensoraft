@@ -9,6 +9,12 @@ export const GEMINI_TIMEOUT_MS = 18_000;
 export interface WorkerEnv {
   readonly GEMINI_API_KEY?: string;
   readonly GEMINI_MODEL?: string;
+  readonly AI_CLIENT_RATE_LIMITER?: RateLimitBinding;
+  readonly AI_GLOBAL_RATE_LIMITER?: RateLimitBinding;
+}
+
+export interface RateLimitBinding {
+  limit(options: { key: string }): Promise<{ success: boolean }>;
 }
 
 const gravityCompensationSchema = {
@@ -16,7 +22,7 @@ const gravityCompensationSchema = {
   additionalProperties: false,
   properties: {
     op: { type: 'string', enum: ['gravityCompensation'] },
-    alpha: { type: 'number', minimum: 0, maximum: 1 },
+    alpha: { type: 'number', minimum: 0.000001, maximum: 1 },
   },
   required: ['op', 'alpha'],
 };
@@ -55,7 +61,7 @@ const scaleSchema = {
   additionalProperties: false,
   properties: {
     op: { type: 'string', enum: ['scale'] },
-    factor: { type: 'number' },
+    factor: { type: 'number', minimum: -1000, maximum: 1000 },
   },
   required: ['op', 'factor'],
 };
@@ -130,7 +136,7 @@ Return only JSON matching the provided schema. The result must be either success
 
 You may use only these sensors: accelerometer, gyroscope, magnetometer.
 You may use only these operations: gravityCompensation, magnitude, movingAverage, rms, scale.
-gravityCompensation is only valid for accelerometer pipelines. Preserve the pipeline type flow: sensor Vector3, then approved transforms, ending in a scalar.
+gravityCompensation is only valid for accelerometer pipelines and alpha must be greater than zero. Scale factors must remain between -1000 and 1000. Preserve the pipeline type flow: sensor Vector3, then approved transforms, ending in a scalar.
 
 Never generate code, JavaScript, expressions, shell commands, URLs, plugins, imports, or executable content. Never invent a sensor, operation, physical unit, or measurement capability. If the request cannot be meaningfully measured with the available sensors, return unsupported.
 
