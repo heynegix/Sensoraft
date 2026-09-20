@@ -28,7 +28,10 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "worker:typecheck": "npm --prefix worker run typecheck",
+    "worker:test": "npm --prefix worker test",
+    "worker:check": "npm run worker:typecheck && npm run worker:test"
   },
   "private": true
 }

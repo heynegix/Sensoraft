@@ -11,6 +11,11 @@ import type {
 } from './types';
 
 const MAX_PIPELINE_LENGTH = 20;
+const MAX_ID_LENGTH = 64;
+const MAX_NAME_LENGTH = 80;
+const MAX_DESCRIPTION_LENGTH = 240;
+const MAX_LABEL_LENGTH = 80;
+const MAX_UNIT_LENGTH = 24;
 const validatedMarker: unique symbol = Symbol('validatedInstrumentDefinition');
 
 type JsonObject = Record<string, unknown>;
@@ -60,6 +65,7 @@ function readNonEmptyString(
   path: string,
   issues: string[],
   required = true,
+  maxLength = MAX_NAME_LENGTH,
 ): string | undefined {
   if (value === undefined && !required) {
     return undefined;
@@ -70,7 +76,18 @@ function readNonEmptyString(
     return undefined;
   }
 
-  return value.trim();
+  const normalized = value.trim();
+  if (normalized.length > maxLength) {
+    issues.push(path + ' must be at most ' + maxLength + ' characters.');
+    return undefined;
+  }
+
+  if (path === 'id' && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalized)) {
+    issues.push('id must contain only lowercase letters, numbers, and single hyphens.');
+    return undefined;
+  }
+
+  return normalized;
 }
 
 function readFiniteNumber(value: unknown, path: string, issues: string[]): number | undefined {
@@ -172,8 +189,20 @@ function parseDisplay(value: unknown, issues: string[]): InstrumentDisplayDefini
     issues.push('display.type must be line or number.');
   }
 
-  const label = readNonEmptyString(own(value, 'label'), 'display.label', issues);
-  const unit = readNonEmptyString(own(value, 'unit'), 'display.unit', issues);
+  const label = readNonEmptyString(
+    own(value, 'label'),
+    'display.label',
+    issues,
+    true,
+    MAX_LABEL_LENGTH,
+  );
+  const unit = readNonEmptyString(
+    own(value, 'unit'),
+    'display.unit',
+    issues,
+    true,
+    MAX_UNIT_LENGTH,
+  );
   const precision =
     own(value, 'precision') === undefined
       ? 3
@@ -263,14 +292,17 @@ export function validateInstrumentDefinition(input: unknown): ValidatedInstrumen
     issues.push('version must be 1.');
   }
 
-  const id = readNonEmptyString(own(input, 'id'), 'id', issues);
-  const name = readNonEmptyString(own(input, 'name'), 'name', issues);
+  const id = readNonEmptyString(own(input, 'id'), 'id', issues, true, MAX_ID_LENGTH);
+  const name = readNonEmptyString(own(input, 'name'), 'name', issues, true, MAX_NAME_LENGTH);
   const description =
     own(input, 'description') === undefined
       ? ''
       : typeof own(input, 'description') === 'string'
         ? (own(input, 'description') as string).trim()
         : (issues.push('description must be a string.'), '');
+  if (description.length > MAX_DESCRIPTION_LENGTH) {
+    issues.push('description must be at most ' + MAX_DESCRIPTION_LENGTH + ' characters.');
+  }
   const sensor = parseSensor(own(input, 'sensor'), issues);
   const pipeline = parsePipeline(own(input, 'pipeline'), issues);
   const display = parseDisplay(own(input, 'display'), issues);

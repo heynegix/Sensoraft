@@ -20,16 +20,19 @@ Sensoraft is a local-first Expo and React Native app that turns smartphone senso
 - Built-in `Rotation Meter` using gyroscope data in `rad/s`.
 - Built-in `Magnetic Field Meter` using magnetometer data in `μT`.
 - Instrument picker and generic definition-driven screen shared by all built-in instruments.
+- Optional `Build with AI` flow that turns a measurement request into a validated instrument through a Cloudflare Worker and Gemini Structured Outputs.
 - Unit tests for signal primitives, DSL validation, compilation, runtime output, and lifecycle cleanup.
-- No account, cloud backend, AI API, RevenueCat, database, BLE, or FFT.
+- No account, prompt history database, RevenueCat, BLE, or FFT.
 
 ## Vision
 
-The long-term product is an instrument builder: a user describes what they want to measure and Sensoraft generates a sensor pipeline and display. Future phases may add AI-assisted generation, saved instruments, CSV export, barometer support, BLE, and multi-device measurement. AI generation is intentionally not part of this phase.
+The long-term product is an instrument builder: a user describes what they want to measure and Sensoraft generates a sensor pipeline and display. Future phases may add saved instruments, CSV export, barometer support, BLE, and multi-device measurement.
 
 ## Instrument DSL
 
 Phase 2 adds a small, allowlisted Instrument DSL. Definitions are validated and compiled before a sensor starts; JSON cannot execute arbitrary JavaScript. See [docs/INSTRUMENT_DSL.md](docs/INSTRUMENT_DSL.md) for the schema, type flow, validation rules, and security model.
+
+The optional natural-language generation flow is documented in [docs/AI_GENERATION.md](docs/AI_GENERATION.md). The Worker owns the Gemini secret; the app only receives a validated declarative definition.
 
 ## Requirements
 
@@ -45,6 +48,8 @@ Phase 2 adds a small, allowlisted Instrument DSL. Definitions are validated and 
 npm install
 npm run start
 ```
+
+To enable `Build with AI`, deploy the Worker and set `EXPO_PUBLIC_SENSORAFT_AI_ENDPOINT` as described in [docs/AI_GENERATION.md](docs/AI_GENERATION.md). The built-in instruments work without that endpoint.
 
 Then scan the QR code from Expo Go on Android. To open the Android target from a connected device or emulator:
 
@@ -78,6 +83,7 @@ npm run lint
 npm run format:check
 npm test
 npm run build:check
+npm run worker:check
 ```
 
 `npm run format` applies Prettier formatting. `npm run build:check` exports the Android JavaScript bundle without committing generated output. The automated checks exercise deterministic signal-processing code; physical sensor behavior must still be confirmed on Android hardware.

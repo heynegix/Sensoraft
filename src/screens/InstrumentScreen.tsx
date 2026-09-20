@@ -32,19 +32,21 @@ const UI_UPDATE_INTERVAL_MS = 40;
 interface InstrumentScreenProps {
   readonly definition: InstrumentDefinition;
   readonly onBack?: () => void;
+  readonly originPrompt?: string;
 }
 
-export function InstrumentScreen({ definition, onBack }: InstrumentScreenProps) {
+export function InstrumentScreen({ definition, onBack, originPrompt }: InstrumentScreenProps) {
   return (
     <InstrumentScreenContent
-      key={definition.id + ':' + JSON.stringify(definition)}
+      key={definition.id + ':' + JSON.stringify(definition) + ':' + (originPrompt ?? '')}
       definition={definition}
       onBack={onBack}
+      originPrompt={originPrompt}
     />
   );
 }
 
-function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) {
+function InstrumentScreenContent({ definition, onBack, originPrompt }: InstrumentScreenProps) {
   const runtimeState = useMemo(() => {
     try {
       return {
@@ -200,6 +202,7 @@ function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) 
         </View>
 
         <View style={styles.readingCard}>
+          {originPrompt !== undefined && <Text style={styles.generatedLabel}>BUILT WITH AI</Text>}
           <Text style={styles.readingLabel}>{definition.display.label.toUpperCase()}</Text>
           <View style={styles.readingRow}>
             <Text style={styles.readingValue}>{measurement.value.toFixed(precision)}</Text>
@@ -400,6 +403,13 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 1.5,
+  },
+  generatedLabel: {
+    color: '#50e3b2',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1.3,
+    marginBottom: 10,
   },
   readingRow: {
     flexDirection: 'row',

@@ -37,3 +37,15 @@ jobs:
 
       - name: Android bundle check
         run: npm run build:check
+
+      - name: Install Worker dependencies
+        working-directory: worker
+        run: npm ci
+
+      - name: Worker type check
+        working-directory: worker
+        run: npm run typecheck
+
+      - name: Worker unit tests
+        working-directory: worker
+        run: npm test
