@@ -20,7 +20,7 @@ Sensoraft is a local-first Expo and React Native app that turns smartphone senso
 - Built-in `Rotation Meter` using gyroscope data in `rad/s`.
 - Built-in `Magnetic Field Meter` using magnetometer data in `μT`.
 - Instrument picker and generic definition-driven screen shared by all built-in instruments.
-- Optional `Build with AI` flow that turns a measurement request into a validated instrument through a Cloudflare Worker and Gemini Structured Outputs.
+- Optional `Build with AI` flow that turns a measurement request into a validated instrument through a Cloudflare Worker and Token Harbor Chat Completions.
 - Unit tests for signal primitives, DSL validation, compilation, runtime output, and lifecycle cleanup.
 - No account, prompt history database, RevenueCat, BLE, or FFT.
 
@@ -32,7 +32,7 @@ The long-term product is an instrument builder: a user describes what they want 
 
 Phase 2 adds a small, allowlisted Instrument DSL. Definitions are validated and compiled before a sensor starts; JSON cannot execute arbitrary JavaScript. See [docs/INSTRUMENT_DSL.md](docs/INSTRUMENT_DSL.md) for the schema, type flow, validation rules, and security model.
 
-The optional natural-language generation flow is documented in [docs/AI_GENERATION.md](docs/AI_GENERATION.md). The Worker owns the Gemini secret; the app only receives a validated declarative definition.
+The optional natural-language generation flow is documented in [docs/AI_GENERATION.md](docs/AI_GENERATION.md). The Worker owns the Token Harbor secret; the app only receives a validated declarative definition.
 
 ## Requirements
 
@@ -136,7 +136,7 @@ src/
    └─ VibrationMeterScreen.tsx   # compatibility entry point
 
 worker/
-├─ src/                    # Cloudflare Worker and Gemini boundary
+├─ src/                    # Cloudflare Worker and Token Harbor boundary
 └─ tests/                  # mocked upstream contract tests
 ```
 

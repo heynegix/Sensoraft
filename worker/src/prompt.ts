@@ -1,4 +1,4 @@
-export function buildGeminiInput(
+export function buildGenerationPrompt(
   prompt: string,
   repairIssues: readonly string[] | undefined,
 ): string {

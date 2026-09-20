@@ -1,7 +1,7 @@
-import { generateWithGemini } from './gemini';
+import { generateWithProvider } from './ai-provider';
 import { BodyTooLargeError, readTextWithLimit } from './body';
 import {
-  GEMINI_TIMEOUT_MS,
+  AI_TIMEOUT_MS,
   MAX_PROMPT_LENGTH,
   MAX_REASON_LENGTH,
   MAX_REPAIR_ISSUES,
@@ -446,10 +446,10 @@ async function handleGenerate(
   const controller = new AbortController();
   const timeoutHandle = setTimeout(
     () => controller.abort(),
-    dependencies.timeoutMs ?? GEMINI_TIMEOUT_MS,
+    dependencies.timeoutMs ?? AI_TIMEOUT_MS,
   );
   try {
-    const generated = await generateWithGemini(
+    const generated = await generateWithProvider(
       env,
       parsedRequest.prompt,
       parsedRequest.repairIssues,

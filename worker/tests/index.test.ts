@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import worker, { handleGenerate } from '../src/index';
-import { GEMINI_RESPONSE_FORMAT } from '../src/schema';
 
 const env = {
-  GEMINI_API_KEY: 'test-key',
-  GEMINI_MODEL: 'gemini-3.5-flash-lite',
+  TOKENHARBOR_API_KEY: 'test-key',
+  AI_MODEL: 'deepseek-v4.1-flash:free',
   AI_CLIENT_RATE_LIMITER: {
     limit: vi.fn().mockResolvedValue({ success: true }),
   },
@@ -30,12 +29,17 @@ const validInstrument = {
   display: { type: 'line', label: 'Vibration', unit: 'm/s²', precision: 3 },
 };
 
-function geminiFetch(output: unknown) {
+function tokenHarborFetch(output: unknown) {
   return vi.fn().mockResolvedValue(
-    new Response(JSON.stringify({ output_text: JSON.stringify(output) }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    }),
+    new Response(
+      JSON.stringify({
+        choices: [{ message: { role: 'assistant', content: JSON.stringify(output) } }],
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    ),
   );
 }
 
@@ -56,8 +60,8 @@ afterEach(() => {
 });
 
 describe('Worker /generate boundary', () => {
-  it('rejects invalid method and path without calling Gemini', async () => {
-    const fetchImpl = geminiFetch({});
+  it('rejects invalid method and path without calling the provider', async () => {
+    const fetchImpl = tokenHarborFetch({});
 
     await expect(worker.fetch(request('', 'GET'), env)).resolves.toMatchObject({ status: 405 });
     await expect(worker.fetch(request('', 'POST', '/other'), env)).resolves.toMatchObject({
@@ -67,7 +71,7 @@ describe('Worker /generate boundary', () => {
   });
 
   it('rejects invalid JSON, blank prompts, oversized prompts, and unknown fields', async () => {
-    const fetchImpl = geminiFetch({});
+    const fetchImpl = tokenHarborFetch({});
     const invalidJson = await handleGenerate(request('{'), env, { fetchImpl });
     const blank = await handleGenerate(request(JSON.stringify({ prompt: '  ' })), env, {
       fetchImpl,
@@ -93,7 +97,7 @@ describe('Worker /generate boundary', () => {
   });
 
   it('returns a validated success result and sends the configured model and secret header upstream', async () => {
-    const fetchImpl = geminiFetch({
+    const fetchImpl = tokenHarborFetch({
       status: 'success',
       reason: 'The accelerometer can measure desk vibration.',
       instrument: validInstrument,
@@ -111,16 +115,29 @@ describe('Worker /generate boundary', () => {
     });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, init] = fetchImpl.mock.calls[0] ?? [];
-    expect(url).toContain('/v1beta/interactions');
-    expect((init as RequestInit).headers).toMatchObject({ 'x-goog-api-key': 'test-key' });
-    const geminiBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
-    expect(geminiBody.model).toBe('gemini-3.5-flash-lite');
-    expect(geminiBody.system_instruction).toContain('untrusted data');
-    expect(geminiBody.store).toBe(false);
+    expect(url).toBe('https://tokenharbor.ai/v1/chat/completions');
+    expect((init as RequestInit).headers).toMatchObject({
+      Authorization: 'Bearer test-key',
+    });
+    const providerBody = JSON.parse((init as RequestInit).body as string) as Record<
+      string,
+      unknown
+    >;
+    expect(providerBody.model).toBe('deepseek-v4.1-flash:free');
+    expect(providerBody.stream).toBe(false);
+    expect(providerBody.response_format).toBeUndefined();
+    expect(providerBody.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: 'system',
+          content: expect.stringContaining('untrusted data'),
+        }),
+      ]),
+    );
   });
 
   it('returns unsupported without creating an instrument', async () => {
-    const fetchImpl = geminiFetch({
+    const fetchImpl = tokenHarborFetch({
       status: 'unsupported',
       reason: 'Ambient temperature is not available.',
       instrument: null,
@@ -135,8 +152,8 @@ describe('Worker /generate boundary', () => {
     expect(await readJson(response)).toMatchObject({ status: 'unsupported', instrument: null });
   });
 
-  it('rejects a request when either rate limit is exceeded before Gemini is called', async () => {
-    const fetchImpl = geminiFetch({});
+  it('rejects a request when either rate limit is exceeded before the provider is called', async () => {
+    const fetchImpl = tokenHarborFetch({});
     const limitedEnv = {
       ...env,
       AI_CLIENT_RATE_LIMITER: {
@@ -155,10 +172,10 @@ describe('Worker /generate boundary', () => {
   });
 
   it('fails closed when rate limiting bindings are not configured', async () => {
-    const fetchImpl = geminiFetch({});
+    const fetchImpl = tokenHarborFetch({});
     const response = await handleGenerate(
       request(JSON.stringify({ prompt: 'measure motion' })),
-      { GEMINI_API_KEY: 'test-key' },
+      { TOKENHARBOR_API_KEY: 'test-key' },
       { fetchImpl },
     );
 
@@ -192,7 +209,7 @@ describe('Worker /generate boundary', () => {
       },
     ],
   ])('rejects model output with %s', async (_name, instrument) => {
-    const fetchImpl = geminiFetch({
+    const fetchImpl = tokenHarborFetch({
       status: 'success',
       reason: 'Candidate.',
       instrument,
@@ -209,41 +226,65 @@ describe('Worker /generate boundary', () => {
     });
   });
 
-  it('keeps Structured Output numeric bounds aligned with the runtime validator', () => {
-    type NumericSchema = { minimum?: number; maximum?: number };
-    type OperationSchema = { properties?: Record<string, NumericSchema> };
-    const schema = GEMINI_RESPONSE_FORMAT[0].schema as unknown as {
-      properties: {
-        instrument: {
-          anyOf: Array<{
-            properties?: {
-              pipeline?: { items?: { anyOf?: OperationSchema[] } };
-            };
-          }>;
-        };
-      };
-    };
-    const operationSchemas =
-      schema.properties.instrument.anyOf[0]?.properties?.pipeline?.items?.anyOf ?? [];
-    const alphaSchema = operationSchemas.find(
-      (operation) => operation.properties?.alpha !== undefined,
-    );
-    const scaleSchema = operationSchemas.find(
-      (operation) => operation.properties?.factor !== undefined,
-    );
-
-    expect(alphaSchema?.properties?.alpha).toMatchObject({ minimum: 0.000001, maximum: 1 });
-    expect(scaleSchema?.properties?.factor).toMatchObject({ minimum: -1000, maximum: 1000 });
-  });
-
-  it('maps Gemini failures and timeouts to generic errors', async () => {
-    const upstreamFailure = vi.fn().mockResolvedValue(new Response('nope', { status: 500 }));
+  it.each([401, 429, 500])('maps provider HTTP %s to a generic error', async (status) => {
+    const upstreamFailure = vi.fn().mockResolvedValue(new Response('nope', { status }));
     const failed = await handleGenerate(
       request(JSON.stringify({ prompt: 'measure motion' })),
       env,
       { fetchImpl: upstreamFailure },
     );
 
+    expect(failed.status).toBe(502);
+    expect(await readJson(failed)).toEqual({
+      error: {
+        code: 'UPSTREAM_UNAVAILABLE',
+        message: 'Instrument generation is temporarily unavailable.',
+      },
+    });
+  });
+
+  it.each([
+    ['malformed JSON', new Response('not-json', { status: 200 })],
+    [
+      'missing choices',
+      new Response(JSON.stringify({ choices: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ],
+    [
+      'empty content',
+      new Response(
+        JSON.stringify({ choices: [{ message: { role: 'assistant', content: '  ' } }] }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    ],
+    [
+      'oversized response',
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { role: 'assistant', content: 'x'.repeat(128_001) } }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    ],
+  ])('rejects %s provider responses', async (_name, providerResponse) => {
+    const failed = await handleGenerate(
+      request(JSON.stringify({ prompt: 'measure motion' })),
+      env,
+      { fetchImpl: vi.fn().mockResolvedValue(providerResponse) },
+    );
+
+    expect(failed.status).toBe(502);
+    expect(await readJson(failed)).toEqual({
+      error: {
+        code: 'UPSTREAM_UNAVAILABLE',
+        message: 'Instrument generation is temporarily unavailable.',
+      },
+    });
+  });
+
+  it('maps provider timeouts to a generic error', async () => {
     const slow = vi.fn(() => new Promise<Response>(() => undefined));
     const timedOut = await handleGenerate(
       request(JSON.stringify({ prompt: 'measure motion' })),
@@ -251,13 +292,6 @@ describe('Worker /generate boundary', () => {
       { fetchImpl: slow, timeoutMs: 5 },
     );
 
-    expect(failed.status).toBe(502);
     expect(timedOut.status).toBe(502);
-    expect(await readJson(failed)).toEqual({
-      error: {
-        code: 'UPSTREAM_UNAVAILABLE',
-        message: 'Instrument generation is temporarily unavailable.',
-      },
-    });
   });
 });
