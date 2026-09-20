@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { DEFAULT_SIGNAL_CONFIG } from '../signal/constants';
 
 interface SignalChartProps {
+  readonly label: string;
+  readonly sampleIntervalMs: number;
   readonly values: readonly number[];
   readonly unit: string;
 }
@@ -11,43 +14,100 @@ const CHART_HEIGHT = 180;
 const MINIMUM_SCALE = 0.25;
 const GRID_LEVELS = [0.25, 0.5, 0.75];
 
-export function SignalChart({ values, unit }: SignalChartProps) {
+export function SignalChart({ label, sampleIntervalMs, values, unit }: SignalChartProps) {
+  const [chartWidth, setChartWidth] = useState(0);
   const visibleValues = values.slice(-DEFAULT_SIGNAL_CONFIG.maxChartPoints);
-  const peak = visibleValues.reduce((highest, value) => Math.max(highest, value), 0);
+  const peak = visibleValues.reduce(
+    (highest, value) => Math.max(highest, Number.isFinite(value) ? Math.abs(value) : 0),
+    0,
+  );
   const scale = Math.max(MINIMUM_SCALE, peak);
+  const points = visibleValues.map((value, index) => {
+    const safeValue = Number.isFinite(value) ? value : 0;
+    const ratio = Math.max(-1, Math.min(1, safeValue / scale));
+    const x =
+      visibleValues.length <= 1
+        ? chartWidth / 2
+        : (index / (visibleValues.length - 1)) * chartWidth;
+    const y = CHART_HEIGHT / 2 - ratio * (CHART_HEIGHT / 2);
+
+    return { x, y };
+  });
 
   return (
-    <View accessible accessibilityLabel={`Realtime vibration chart in ${unit}`} style={styles.card}>
+    <View
+      accessible
+      accessibilityLabel={'Realtime ' + label + ' chart in ' + unit}
+      style={styles.card}
+    >
       <View style={styles.headerRow}>
-        <Text style={styles.label}>REALTIME SIGNAL</Text>
+        <Text style={styles.label}>REALTIME {label.toUpperCase()}</Text>
         <Text style={styles.scaleLabel}>
-          0 — {scale.toFixed(2)} {unit}
+          ±{scale.toFixed(2)} {unit}
         </Text>
       </View>
 
-      <View style={styles.chart}>
+      <View
+        onLayout={({ nativeEvent: { layout } }) => {
+          setChartWidth((currentWidth) =>
+            currentWidth === layout.width ? currentWidth : layout.width,
+          );
+        }}
+        style={styles.chart}
+      >
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          {GRID_LEVELS.map((level) => (
+          {GRID_LEVELS.flatMap((level) => [
             <View
-              key={level}
-              style={[styles.gridLine, { bottom: Math.round(CHART_HEIGHT * level) }]}
-            />
-          ))}
+              key={'positive-' + level}
+              style={[
+                styles.gridLine,
+                { bottom: Math.round(CHART_HEIGHT / 2 + (CHART_HEIGHT / 2) * level) },
+              ]}
+            />,
+            <View
+              key={'negative-' + level}
+              style={[
+                styles.gridLine,
+                { bottom: Math.round(CHART_HEIGHT / 2 - (CHART_HEIGHT / 2) * level) },
+              ]}
+            />,
+          ])}
           <View style={[styles.gridLine, styles.zeroLine]} />
         </View>
 
-        <View style={styles.barRow}>
-          {visibleValues.map((value, index) => {
-            const ratio = Math.min(1, Math.max(0, value / scale));
-            const height = Math.max(2, Math.round(CHART_HEIGHT * ratio));
+        {chartWidth > 0 && points.length > 0 && (
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            {points.length > 1 &&
+              points.slice(0, -1).map((point, index) => {
+                const nextPoint = points[index + 1];
+                const dx = nextPoint.x - point.x;
+                const dy = nextPoint.y - point.y;
+                const length = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
-            return (
-              <View key={index} style={styles.barColumn}>
-                <View style={[styles.bar, { height }]} />
-              </View>
-            );
-          })}
-        </View>
+                return (
+                  <View
+                    key={'segment-' + index}
+                    style={[
+                      styles.lineSegment,
+                      {
+                        left: (point.x + nextPoint.x) / 2 - length / 2,
+                        top: (point.y + nextPoint.y) / 2 - 1,
+                        transform: [{ rotate: angle + 'deg' }],
+                        width: length,
+                      },
+                    ]}
+                  />
+                );
+              })}
+            {points.map((point, index) => (
+              <View
+                key={'point-' + index}
+                style={[styles.linePoint, { left: point.x - 3, top: point.y - 3 }]}
+              />
+            ))}
+          </View>
+        )}
 
         {visibleValues.length === 0 && (
           <Text style={styles.emptyLabel}>Press Start to stream data</Text>
@@ -56,7 +116,7 @@ export function SignalChart({ values, unit }: SignalChartProps) {
 
       <View style={styles.footerRow}>
         <Text style={styles.footerText}>
-          PAST {Math.round((visibleValues.length * DEFAULT_SIGNAL_CONFIG.sensorIntervalMs) / 1000)}s
+          PAST {Math.round((visibleValues.length * sampleIntervalMs) / 1000)}s
         </Text>
         <Text style={styles.footerText}>{visibleValues.length} samples</Text>
       </View>
@@ -103,25 +163,23 @@ const styles = StyleSheet.create({
     backgroundColor: '#19303a',
   },
   zeroLine: {
-    bottom: 0,
+    bottom: CHART_HEIGHT / 2,
     backgroundColor: '#31505a',
   },
-  barRow: {
-    height: CHART_HEIGHT,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 4,
-  },
-  barColumn: {
-    flex: 1,
-    height: CHART_HEIGHT,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-  },
-  bar: {
-    width: 3,
-    borderRadius: 3,
+  lineSegment: {
+    position: 'absolute',
+    height: 2,
+    borderRadius: 2,
     backgroundColor: '#50e3b2',
+  },
+  linePoint: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#a2ffe0',
+    borderWidth: 1,
+    borderColor: '#50e3b2',
   },
   emptyLabel: {
     position: 'absolute',
