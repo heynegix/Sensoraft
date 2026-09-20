@@ -1,6 +1,6 @@
 import { compileInstrument } from '../instruments/runtime/compiler';
 import { InstrumentCompileError, InstrumentValidationError } from '../instruments/dsl/errors';
-import { validateInstrumentDefinition } from '../instruments/dsl/validator';
+import { parseInstrumentDefinition } from '../instruments/dsl/parser';
 import { getConfiguredAiEndpoint } from './config';
 import {
   GenerationConfigurationError,
@@ -98,7 +98,7 @@ export function parseGenerationResult(input: unknown): GenerationResult {
   }
 
   try {
-    const validatedDefinition = validateInstrumentDefinition(input.instrument);
+    const validatedDefinition = parseInstrumentDefinition(JSON.stringify(input.instrument));
     compileInstrument(validatedDefinition);
     return { status: 'success', reason, instrument: validatedDefinition };
   } catch (error) {
@@ -229,18 +229,28 @@ export class RemoteInstrumentGenerator implements InstrumentGenerator {
       response = await Promise.race([requestPromise, timeoutPromise]);
     } catch (error) {
       if (error instanceof GenerationRequestError) {
+        controller.abort();
         throw error;
       }
 
+      controller.abort();
       throw new GenerationRequestError();
-    } finally {
+    }
+
+    let responseText: string;
+    try {
+      responseText = await response.text();
+    } catch {
+      controller.abort();
       if (timeoutHandle !== undefined) {
         clearTimeout(timeoutHandle);
       }
-      controller.abort();
+      throw new GenerationRequestError();
     }
-
-    const responseText = await response.text();
+    controller.abort();
+    if (timeoutHandle !== undefined) {
+      clearTimeout(timeoutHandle);
+    }
     const payload = parseJsonText(responseText);
     if (!response.ok) {
       const workerError = getWorkerError(payload);

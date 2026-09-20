@@ -1,4 +1,5 @@
-import { generateWithGemini, GeminiUpstreamError } from './gemini';
+import { generateWithGemini } from './gemini';
+import { BodyTooLargeError, readTextWithLimit } from './body';
 import {
   GEMINI_TIMEOUT_MS,
   MAX_PROMPT_LENGTH,
@@ -354,12 +355,18 @@ async function handleGenerate(
 
   let bodyText: string;
   try {
-    bodyText = await request.text();
-  } catch {
+    bodyText = await readTextWithLimit(request, MAX_REQUEST_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      return errorResponse('REQUEST_TOO_LARGE', 'Request is too large.', 413);
+    }
     return errorResponse('INVALID_JSON', 'Request must contain valid JSON.', 400);
   }
   if (bodyText.length > MAX_REQUEST_BODY_BYTES) {
     return errorResponse('REQUEST_TOO_LARGE', 'Request is too large.', 413);
+  }
+  if (bodyText.length === 0) {
+    return errorResponse('INVALID_JSON', 'Request must contain valid JSON.', 400);
   }
 
   let body: unknown;
@@ -405,14 +412,6 @@ async function handleGenerate(
         'The generated instrument did not pass validation.',
         422,
         error.issues,
-      );
-    }
-
-    if (error instanceof GeminiUpstreamError) {
-      return errorResponse(
-        'UPSTREAM_UNAVAILABLE',
-        'Instrument generation is temporarily unavailable.',
-        502,
       );
     }
 

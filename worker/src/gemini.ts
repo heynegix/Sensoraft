@@ -6,6 +6,7 @@ import {
   type WorkerEnv,
 } from './schema';
 import { buildGeminiInput } from './prompt';
+import { readTextWithLimit } from './body';
 
 const GEMINI_INTERACTIONS_URL = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 
@@ -131,12 +132,8 @@ export async function generateWithGemini(
 
   let responseText: string;
   try {
-    responseText = await response.text();
+    responseText = await readTextWithLimit(response, MAX_UPSTREAM_RESPONSE_BYTES);
   } catch {
-    throw new GeminiUpstreamError();
-  }
-
-  if (responseText.length > MAX_UPSTREAM_RESPONSE_BYTES) {
     throw new GeminiUpstreamError();
   }
 

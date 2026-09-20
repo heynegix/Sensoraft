@@ -21,7 +21,7 @@ import { LatestRequestGate } from '../ai/request-gate';
 import { MAX_PROMPT_LENGTH, type InstrumentGenerator } from '../ai/types';
 import type { InstrumentDefinition } from '../instruments/dsl/types';
 
-type GenerationStatus = 'idle' | 'generating' | 'unsupported' | 'error';
+type GenerationStatus = 'idle' | 'generating' | 'success' | 'unsupported' | 'error';
 
 interface GenerateInstrumentScreenProps {
   readonly generator: InstrumentGenerator;
@@ -75,6 +75,7 @@ export function GenerateInstrumentScreen({
         return;
       }
 
+      setStatus('success');
       onGenerated(result.instrument, prompt.trim());
     } catch (error) {
       if (!mountedRef.current || !requestGate.isCurrent(requestId)) {

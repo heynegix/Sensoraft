@@ -75,11 +75,13 @@ describe('Worker /generate boundary', () => {
       env,
       { fetchImpl },
     );
+    const oversizedBody = await handleGenerate(request('x'.repeat(20_000)), env, { fetchImpl });
 
     expect(invalidJson.status).toBe(400);
     expect(blank.status).toBe(400);
     expect(oversized.status).toBe(400);
     expect(unknown.status).toBe(400);
+    expect(oversizedBody.status).toBe(413);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 

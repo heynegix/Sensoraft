@@ -125,10 +125,19 @@ src/
 │  └─ types.ts              # compatibility re-export
 ├─ components/
 │  └─ SignalChart.tsx       # bounded chart presentation
+├─ ai/
+│  ├─ types.ts               # generator contract and result types
+│  ├─ remote-instrument-generator.ts
+│  └─ request-gate.ts        # stale response protection
 └─ screens/
    ├─ InstrumentPickerScreen.tsx # built-in instrument selection
+   ├─ GenerateInstrumentScreen.tsx # natural-language generation
    ├─ InstrumentScreen.tsx       # generic definition-driven UI
    └─ VibrationMeterScreen.tsx   # compatibility entry point
+
+worker/
+├─ src/                    # Cloudflare Worker and Gemini boundary
+└─ tests/                  # mocked upstream contract tests
 ```
 
 All built-in instruments use this route:
