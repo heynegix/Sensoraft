@@ -29,7 +29,19 @@ export class SensorManager<Sample> {
     const requestId = ++this.startRequestId;
     this.removeSubscription();
 
-    const isAvailable = await this.adapter.isAvailable();
+    let isAvailable: boolean;
+    try {
+      isAvailable = await this.adapter.isAvailable();
+    } catch (error) {
+      // A stopped or superseded request must not surface an obsolete error to
+      // the caller, where it could cancel a newer start attempt.
+      if (requestId !== this.startRequestId) {
+        return false;
+      }
+
+      throw error;
+    }
+
     if (requestId !== this.startRequestId) {
       return false;
     }

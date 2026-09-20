@@ -37,16 +37,19 @@ export function VibrationMeterScreen() {
   const [history, setHistory] = useState<number[]>([]);
   const mountedRef = useRef(true);
   const listeningRef = useRef(false);
+  const startTokenRef = useRef(0);
 
   useEffect(() => {
     return () => {
       mountedRef.current = false;
       listeningRef.current = false;
+      startTokenRef.current += 1;
       sensorManager.stop();
     };
   }, [sensorManager]);
 
   const stopMeasurement = useCallback(() => {
+    startTokenRef.current += 1;
     listeningRef.current = false;
     sensorManager.stop();
     engine.reset();
@@ -61,6 +64,8 @@ export function VibrationMeterScreen() {
       return;
     }
 
+    const startToken = startTokenRef.current + 1;
+    startTokenRef.current = startToken;
     setStatus('starting');
     setErrorMessage(null);
     engine.reset();
@@ -82,16 +87,21 @@ export function VibrationMeterScreen() {
         });
       });
 
-      if (started && mountedRef.current && listeningRef.current) {
+      if (
+        started &&
+        startToken === startTokenRef.current &&
+        mountedRef.current &&
+        listeningRef.current
+      ) {
         setStatus('running');
       }
     } catch (error) {
-      sensorManager.stop();
-      listeningRef.current = false;
-
-      if (!mountedRef.current) {
+      if (!mountedRef.current || startToken !== startTokenRef.current) {
         return;
       }
+
+      sensorManager.stop();
+      listeningRef.current = false;
 
       setStatus('error');
       setErrorMessage(

@@ -8,8 +8,8 @@ export const VIBRATION_METER_DEFINITION: InstrumentDefinition = {
   name: 'Vibration Meter',
   sensor: 'accelerometer',
   pipeline: [
-    { op: 'magnitude' },
     { op: 'gravityCompensation' },
+    { op: 'magnitude' },
     { op: 'movingAverage', windowSize: DEFAULT_SIGNAL_CONFIG.movingAverageWindowSize },
     { op: 'rms', windowSize: DEFAULT_SIGNAL_CONFIG.rmsWindowSize },
   ],

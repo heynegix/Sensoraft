@@ -99,8 +99,8 @@ The current pipeline is:
 
 ```text
 accelerometer x/y/z in g
-  → vector magnitude
-  → slow baseline / gravity compensation
+  → slow 3-axis gravity baseline compensation
+  → residual vector magnitude
   → moving average
   → RMS
   → m/s² display and chart

@@ -56,4 +56,27 @@ describe('SensorManager', () => {
     expect(adapter.subscribeCalls).toBe(0);
     expect(manager.isRunning).toBe(false);
   });
+
+  it('ignores an availability rejection from a superseded start', async () => {
+    const adapter = new FakeSensorAdapter();
+    let rejectFirst: (reason?: unknown) => void = () => undefined;
+    const firstAvailability = new Promise<boolean>((_, reject) => {
+      rejectFirst = reject;
+    });
+    adapter.isAvailable = jest
+      .fn<Promise<boolean>, []>()
+      .mockReturnValueOnce(firstAvailability)
+      .mockResolvedValueOnce(true);
+    const manager = new SensorManager(adapter, 'Fake sensor');
+
+    const firstStart = manager.start(jest.fn());
+    const secondStart = manager.start(jest.fn());
+    rejectFirst(new Error('late availability failure'));
+
+    await expect(firstStart).resolves.toBe(false);
+    await expect(secondStart).resolves.toBe(true);
+    expect(adapter.subscribeCalls).toBe(1);
+
+    manager.stop();
+  });
 });

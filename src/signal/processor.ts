@@ -5,7 +5,7 @@ import {
   METERS_PER_SECOND_SQUARED_PER_G,
   type SignalProcessingConfig,
 } from './constants';
-import { BaselineCompensator } from './gravity-compensation';
+import { VectorBaselineCompensator } from './gravity-compensation';
 import { magnitude } from './magnitude';
 import { MovingAverageFilter } from './moving-average';
 import { RmsFilter } from './rms';
@@ -22,19 +22,19 @@ export interface ProcessedSignal {
 }
 
 export class VibrationSignalProcessor {
-  private readonly baselineCompensator: BaselineCompensator;
+  private readonly baselineCompensator: VectorBaselineCompensator;
   private readonly movingAverageFilter: MovingAverageFilter;
   private readonly rmsFilter: RmsFilter;
 
   public constructor(config: SignalProcessingConfig = DEFAULT_SIGNAL_CONFIG) {
-    this.baselineCompensator = new BaselineCompensator(config.gravityCompensationAlpha);
+    this.baselineCompensator = new VectorBaselineCompensator(config.gravityCompensationAlpha);
     this.movingAverageFilter = new MovingAverageFilter(config.movingAverageWindowSize);
     this.rmsFilter = new RmsFilter(config.rmsWindowSize);
   }
 
   public process(sample: AccelerometerSample): ProcessedSignal {
     const magnitudeInG = magnitude(sample);
-    const gravityCompensatedInG = this.baselineCompensator.process(magnitudeInG);
+    const gravityCompensatedInG = magnitude(this.baselineCompensator.process(sample));
     const averagedInG = this.movingAverageFilter.add(gravityCompensatedInG);
     const rmsInG = this.rmsFilter.add(averagedInG);
 

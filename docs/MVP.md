@@ -18,7 +18,7 @@ Included:
 
 - Expo + React Native + TypeScript app.
 - Android physical-device accelerometer input.
-- X / Y / Z capture, magnitude, baseline compensation, moving average, RMS.
+- X / Y / Z capture, vector gravity compensation, residual magnitude, moving average, RMS.
 - Numeric RMS value and bounded real-time chart.
 - Start / Stop and unavailable-sensor handling.
 - Unit tests for the pure signal primitives.
