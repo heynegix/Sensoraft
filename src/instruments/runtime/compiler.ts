@@ -1,4 +1,4 @@
-import type { AccelerometerSample } from '../../sensors/types';
+import type { SensorSample } from '../../sensors/types';
 import { InstrumentCompileError, InstrumentRuntimeError } from '../dsl/errors';
 import { isValidatedInstrumentDefinition, validateInstrumentDefinition } from '../dsl/validator';
 import type { InstrumentDefinition, PipelineValueType } from '../dsl/types';
@@ -11,7 +11,7 @@ import {
 export interface InstrumentMeasurement {
   readonly timestamp: number;
   readonly value: number;
-  readonly raw: AccelerometerSample;
+  readonly raw: SensorSample;
 }
 
 export class CompiledInstrument {
@@ -20,14 +20,14 @@ export class CompiledInstrument {
     private readonly operations: readonly CompiledOperation[],
   ) {}
 
-  public process(sample: AccelerometerSample): InstrumentMeasurement {
+  public process(sample: SensorSample): InstrumentMeasurement {
     if (
       !Number.isFinite(sample.x) ||
       !Number.isFinite(sample.y) ||
       !Number.isFinite(sample.z) ||
       !Number.isFinite(sample.timestamp)
     ) {
-      throw new InstrumentRuntimeError('Accelerometer sample contains a non-finite value.');
+      throw new InstrumentRuntimeError('Sensor sample contains a non-finite value.');
     }
 
     let value: PipelineValue = { x: sample.x, y: sample.y, z: sample.z };
@@ -61,6 +61,16 @@ function compileValidatedInstrument(definition: InstrumentDefinition): CompiledI
     const operationDefinition = getOperationDefinition(operation.op);
     if (operationDefinition === undefined) {
       throw new InstrumentCompileError('Unknown operation: ' + operation.op);
+    }
+
+    if (!operationDefinition.supportedSensors.includes(definition.sensor.type)) {
+      throw new InstrumentCompileError(
+        'Operation ' +
+          operation.op +
+          ' is not supported for sensor type ' +
+          definition.sensor.type +
+          '.',
+      );
     }
 
     if (operationDefinition.inputType !== currentType) {

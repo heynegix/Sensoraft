@@ -3,11 +3,13 @@ import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'rea
 import { StatusBar } from 'expo-status-bar';
 
 import { SignalChart } from '../components/SignalChart';
+import type { ChartSample } from '../components/chart-history';
 import { InstrumentCompileError, InstrumentValidationError } from '../instruments/dsl/errors';
 import { InstrumentRuntime } from '../instruments/runtime/runtime';
 import type { InstrumentMeasurement } from '../instruments/runtime/compiler';
 import type { InstrumentDefinition } from '../instruments/dsl/types';
 import { SensorUnavailableError } from '../sensors/sensor-manager';
+import { SENSOR_METADATA } from '../sensors/types';
 import { DEFAULT_SIGNAL_CONFIG } from '../signal/constants';
 
 type InstrumentStatus = 'stopped' | 'starting' | 'running' | 'error';
@@ -23,20 +25,26 @@ const INITIAL_MEASUREMENT: InstrumentMeasurement = {
   },
 };
 
+// Built-in instruments sample at 20 Hz; this still renders every built-in sample
+// while capping future 100 Hz definitions at 25 UI updates per second.
+const UI_UPDATE_INTERVAL_MS = 40;
+
 interface InstrumentScreenProps {
   readonly definition: InstrumentDefinition;
+  readonly onBack?: () => void;
 }
 
-export function InstrumentScreen({ definition }: InstrumentScreenProps) {
+export function InstrumentScreen({ definition, onBack }: InstrumentScreenProps) {
   return (
     <InstrumentScreenContent
       key={definition.id + ':' + JSON.stringify(definition)}
       definition={definition}
+      onBack={onBack}
     />
   );
 }
 
-function InstrumentScreenContent({ definition }: InstrumentScreenProps) {
+function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) {
   const runtimeState = useMemo(() => {
     try {
       return {
@@ -54,9 +62,10 @@ function InstrumentScreenContent({ definition }: InstrumentScreenProps) {
   const [status, setStatus] = useState<InstrumentStatus>('stopped');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [measurement, setMeasurement] = useState<InstrumentMeasurement>(INITIAL_MEASUREMENT);
-  const [history, setHistory] = useState<number[]>([]);
+  const [chartSamples, setChartSamples] = useState<ChartSample[]>([]);
   const mountedRef = useRef(true);
   const startTokenRef = useRef(0);
+  const lastUiUpdateTimestampRef = useRef<number | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -73,7 +82,8 @@ function InstrumentScreenContent({ definition }: InstrumentScreenProps) {
     setStatus('stopped');
     setErrorMessage(null);
     setMeasurement(INITIAL_MEASUREMENT);
-    setHistory([]);
+    setChartSamples([]);
+    lastUiUpdateTimestampRef.current = null;
   }, [runtime]);
 
   const startMeasurement = useCallback(async () => {
@@ -90,7 +100,8 @@ function InstrumentScreenContent({ definition }: InstrumentScreenProps) {
     setStatus('starting');
     setErrorMessage(null);
     setMeasurement(INITIAL_MEASUREMENT);
-    setHistory([]);
+    setChartSamples([]);
+    lastUiUpdateTimestampRef.current = null;
 
     try {
       const started = await runtime.start(
@@ -99,10 +110,25 @@ function InstrumentScreenContent({ definition }: InstrumentScreenProps) {
             return;
           }
 
+          const lastUiUpdateTimestamp = lastUiUpdateTimestampRef.current;
+          if (
+            lastUiUpdateTimestamp !== null &&
+            nextMeasurement.timestamp - lastUiUpdateTimestamp < UI_UPDATE_INTERVAL_MS
+          ) {
+            return;
+          }
+          lastUiUpdateTimestampRef.current = nextMeasurement.timestamp;
+
           setMeasurement(nextMeasurement);
-          setHistory((current) => {
-            const nextHistory = [...current, nextMeasurement.value];
-            return nextHistory.slice(-DEFAULT_SIGNAL_CONFIG.maxChartPoints);
+          setChartSamples((current) => {
+            const nextChartSamples = [
+              ...current,
+              {
+                timestamp: nextMeasurement.timestamp,
+                value: nextMeasurement.value,
+              },
+            ];
+            return nextChartSamples.slice(-DEFAULT_SIGNAL_CONFIG.maxChartPoints);
           });
         },
         () => {
@@ -138,7 +164,7 @@ function InstrumentScreenContent({ definition }: InstrumentScreenProps) {
         ? 'STARTING'
         : 'STOPPED';
   const precision = definition.display.precision;
-  const sampleIntervalMs = 1000 / definition.sensor.sampleRateHz;
+  const sensorMetadata = SENSOR_METADATA[definition.sensor.type];
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -146,6 +172,16 @@ function InstrumentScreenContent({ definition }: InstrumentScreenProps) {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
           <View>
+            {onBack !== undefined && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Back to instrument list"
+                onPress={onBack}
+                style={styles.backButton}
+              >
+                <Text style={styles.backText}>← ALL INSTRUMENTS</Text>
+              </Pressable>
+            )}
             <Text style={styles.eyebrow}>INSTRUMENT / {definition.id.toUpperCase()}</Text>
             <Text style={styles.title}>{definition.name}</Text>
           </View>
@@ -177,16 +213,17 @@ function InstrumentScreenContent({ definition }: InstrumentScreenProps) {
         {definition.display.type === 'line' && (
           <SignalChart
             label={definition.display.label}
-            sampleIntervalMs={sampleIntervalMs}
+            samples={chartSamples}
             unit={definition.display.unit}
-            values={history}
           />
         )}
 
         <View style={styles.axesCard}>
           <View style={styles.cardHeaderRow}>
             <Text style={styles.cardLabel}>RAW SENSOR DATA</Text>
-            <Text style={styles.cardMeta}>ACCELEROMETER / g</Text>
+            <Text style={styles.cardMeta}>
+              {sensorMetadata.label.toUpperCase()} / {sensorMetadata.axisUnit}
+            </Text>
           </View>
           <View style={styles.axisRow}>
             <AxisValue axis="X" value={measurement.raw.x} />
@@ -220,8 +257,8 @@ function InstrumentScreenContent({ definition }: InstrumentScreenProps) {
         </Pressable>
 
         <Text style={styles.footerNote}>
-          Place the phone on a stable surface, then tap the desk or move the phone to see the
-          compiled signal respond.
+          Start the instrument, then move the phone or interact with the physical environment to see
+          the compiled signal respond.
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -230,7 +267,7 @@ function InstrumentScreenContent({ definition }: InstrumentScreenProps) {
 
 function getStartErrorMessage(error: unknown): string {
   if (error instanceof SensorUnavailableError) {
-    return 'No accelerometer is available on this device.';
+    return error.sensorName + ' is not available on this device.';
   }
 
   return 'Unable to access the instrument. Try again on a physical Android device.';
@@ -273,6 +310,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  backButton: {
+    marginBottom: 10,
+  },
+  backText: {
+    color: '#82b6a9',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.2,
   },
   eyebrow: {
     color: '#5d8b85',

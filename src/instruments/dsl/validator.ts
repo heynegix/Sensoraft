@@ -1,4 +1,5 @@
 import { getOperationDefinition } from '../runtime/operation-registry';
+import { isSupportedSensorType } from '../../sensors/types';
 import { InstrumentValidationError } from './errors';
 import type {
   DisplayType,
@@ -89,11 +90,11 @@ function parseSensor(value: unknown, issues: string[]): InstrumentSensorDefiniti
 
   addUnknownFieldIssues(value, ['type', 'sampleRateHz'], 'sensor', issues);
   const sensorType = own(value, 'type');
-  if (sensorType !== 'accelerometer') {
+  if (!isSupportedSensorType(sensorType)) {
     issues.push(
       typeof sensorType === 'string'
         ? 'Unsupported sensor type: ' + sensorType
-        : 'sensor.type must be accelerometer.',
+        : 'sensor.type must be accelerometer, gyroscope, or magnetometer.',
     );
   }
 
@@ -105,11 +106,11 @@ function parseSensor(value: unknown, issues: string[]): InstrumentSensorDefiniti
     issues.push('sensor.sampleRateHz must be an integer between 1 and 100 Hz.');
   }
 
-  if (sensorType !== 'accelerometer' || sampleRateHz === undefined) {
+  if (!isSupportedSensorType(sensorType) || sampleRateHz === undefined) {
     return undefined;
   }
 
-  return { type: 'accelerometer', sampleRateHz };
+  return { type: sensorType, sampleRateHz };
 }
 
 function parsePipeline(value: unknown, issues: string[]): PipelineOperation[] {
@@ -217,6 +218,12 @@ function validatePipelineTypes(
     const definition = getOperationDefinition(operation.op);
     if (definition === undefined) {
       return;
+    }
+
+    if (!definition.supportedSensors.includes(sensor.type)) {
+      issues.push(
+        'Operation ' + operation.op + ' is not supported for sensor type ' + sensor.type + '.',
+      );
     }
 
     if (definition.inputType !== currentType) {

@@ -1,4 +1,4 @@
-import type { AccelerometerSample, SensorController } from '../../sensors/types';
+import type { SensorController, SensorSample } from '../../sensors/types';
 import { SensorUnavailableError } from '../../sensors/sensor-manager';
 import { InstrumentRuntimeError } from '../dsl/errors';
 import { compileInstrument, type CompiledInstrument, type InstrumentMeasurement } from './compiler';
@@ -8,12 +8,12 @@ export type InstrumentMeasurementListener = (measurement: InstrumentMeasurement)
 export type InstrumentRuntimeErrorListener = (error: Error) => void;
 
 export interface InstrumentRuntimeDependencies {
-  readonly sensorController?: SensorController<AccelerometerSample>;
+  readonly sensorController?: SensorController<SensorSample>;
 }
 
 export class InstrumentRuntime {
   private readonly compiledInstrument: CompiledInstrument;
-  private readonly sensorController: SensorController<AccelerometerSample>;
+  private readonly sensorController: SensorController<SensorSample>;
   private requestId = 0;
   private disposed = false;
 

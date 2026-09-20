@@ -1,5 +1,6 @@
-export type SensorType =
-  'accelerometer' | 'gyroscope' | 'magnetometer' | 'barometer' | 'microphone';
+import type { SensorType } from '../../sensors/types';
+
+export type { SensorType } from '../../sensors/types';
 
 export type PipelineValueType = 'vector3' | 'scalar';
 
