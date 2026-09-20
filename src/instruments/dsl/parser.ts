@@ -1,8 +1,7 @@
 import { InstrumentValidationError } from './errors';
-import { validateInstrumentDefinition } from './validator';
-import type { InstrumentDefinition } from './types';
+import { validateInstrumentDefinition, type ValidatedInstrumentDefinition } from './validator';
 
-export function parseInstrumentDefinition(json: string): InstrumentDefinition {
+export function parseInstrumentDefinition(json: string): ValidatedInstrumentDefinition {
   let parsed: unknown;
   try {
     parsed = JSON.parse(json) as unknown;

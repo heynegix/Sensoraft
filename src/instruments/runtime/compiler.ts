@@ -1,6 +1,6 @@
 import type { AccelerometerSample } from '../../sensors/types';
 import { InstrumentCompileError, InstrumentRuntimeError } from '../dsl/errors';
-import { validateInstrumentDefinition } from '../dsl/validator';
+import { isValidatedInstrumentDefinition, validateInstrumentDefinition } from '../dsl/validator';
 import type { InstrumentDefinition, PipelineValueType } from '../dsl/types';
 import {
   getOperationDefinition,
@@ -89,5 +89,8 @@ function compileValidatedInstrument(definition: InstrumentDefinition): CompiledI
 }
 
 export function compileInstrument(input: unknown): CompiledInstrument {
-  return compileValidatedInstrument(validateInstrumentDefinition(input));
+  const definition = isValidatedInstrumentDefinition(input)
+    ? input
+    : validateInstrumentDefinition(input);
+  return compileValidatedInstrument(definition);
 }

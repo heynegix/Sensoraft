@@ -10,8 +10,13 @@ import type {
 } from './types';
 
 const MAX_PIPELINE_LENGTH = 20;
+const validatedMarker: unique symbol = Symbol('validatedInstrumentDefinition');
 
 type JsonObject = Record<string, unknown>;
+
+export type ValidatedInstrumentDefinition = InstrumentDefinition & {
+  readonly [validatedMarker]: true;
+};
 
 function isObject(value: unknown): value is JsonObject {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -24,6 +29,16 @@ function isObject(value: unknown): value is JsonObject {
 
 function own(object: JsonObject, key: string): unknown {
   return Object.prototype.hasOwnProperty.call(object, key) ? object[key] : undefined;
+}
+
+export function isValidatedInstrumentDefinition(
+  input: unknown,
+): input is ValidatedInstrumentDefinition {
+  return (
+    isObject(input) &&
+    Object.prototype.hasOwnProperty.call(input, validatedMarker) &&
+    (input as { readonly [validatedMarker]?: unknown })[validatedMarker] === true
+  );
 }
 
 function addUnknownFieldIssues(
@@ -224,7 +239,7 @@ function validatePipelineTypes(
   });
 }
 
-export function validateInstrumentDefinition(input: unknown): InstrumentDefinition {
+export function validateInstrumentDefinition(input: unknown): ValidatedInstrumentDefinition {
   const issues: string[] = [];
   if (!isObject(input)) {
     throw new InstrumentValidationError('Instrument definition must be an object.');
@@ -272,5 +287,6 @@ export function validateInstrumentDefinition(input: unknown): InstrumentDefiniti
     sensor,
     pipeline,
     display,
+    [validatedMarker]: true,
   };
 }

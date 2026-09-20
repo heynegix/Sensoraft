@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { DEFAULT_SIGNAL_CONFIG } from '../signal/constants';
@@ -14,9 +15,24 @@ const MINIMUM_SCALE = 0.25;
 const GRID_LEVELS = [0.25, 0.5, 0.75];
 
 export function SignalChart({ label, sampleIntervalMs, values, unit }: SignalChartProps) {
+  const [chartWidth, setChartWidth] = useState(0);
   const visibleValues = values.slice(-DEFAULT_SIGNAL_CONFIG.maxChartPoints);
-  const peak = visibleValues.reduce((highest, value) => Math.max(highest, Math.abs(value)), 0);
+  const peak = visibleValues.reduce(
+    (highest, value) => Math.max(highest, Number.isFinite(value) ? Math.abs(value) : 0),
+    0,
+  );
   const scale = Math.max(MINIMUM_SCALE, peak);
+  const points = visibleValues.map((value, index) => {
+    const safeValue = Number.isFinite(value) ? value : 0;
+    const ratio = Math.max(-1, Math.min(1, safeValue / scale));
+    const x =
+      visibleValues.length <= 1
+        ? chartWidth / 2
+        : (index / (visibleValues.length - 1)) * chartWidth;
+    const y = CHART_HEIGHT / 2 - ratio * (CHART_HEIGHT / 2);
+
+    return { x, y };
+  });
 
   return (
     <View
@@ -31,7 +47,14 @@ export function SignalChart({ label, sampleIntervalMs, values, unit }: SignalCha
         </Text>
       </View>
 
-      <View style={styles.chart}>
+      <View
+        onLayout={({ nativeEvent: { layout } }) => {
+          setChartWidth((currentWidth) =>
+            currentWidth === layout.width ? currentWidth : layout.width,
+          );
+        }}
+        style={styles.chart}
+      >
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
           {GRID_LEVELS.flatMap((level) => [
             <View
@@ -52,24 +75,39 @@ export function SignalChart({ label, sampleIntervalMs, values, unit }: SignalCha
           <View style={[styles.gridLine, styles.zeroLine]} />
         </View>
 
-        <View style={styles.barRow}>
-          {visibleValues.map((value, index) => {
-            const ratio = Math.min(1, Math.abs(value) / scale);
-            const height = value === 0 ? 0 : Math.max(2, Math.round((CHART_HEIGHT / 2) * ratio));
+        {chartWidth > 0 && points.length > 0 && (
+          <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+            {points.length > 1 &&
+              points.slice(0, -1).map((point, index) => {
+                const nextPoint = points[index + 1];
+                const dx = nextPoint.x - point.x;
+                const dy = nextPoint.y - point.y;
+                const length = Math.sqrt(dx * dx + dy * dy);
+                const angle = Math.atan2(dy, dx) * (180 / Math.PI);
 
-            return (
-              <View key={index} style={styles.barColumn}>
-                <View
-                  style={[
-                    styles.bar,
-                    value >= 0 ? styles.barPositive : styles.barNegative,
-                    { height },
-                  ]}
-                />
-              </View>
-            );
-          })}
-        </View>
+                return (
+                  <View
+                    key={'segment-' + index}
+                    style={[
+                      styles.lineSegment,
+                      {
+                        left: (point.x + nextPoint.x) / 2 - length / 2,
+                        top: (point.y + nextPoint.y) / 2 - 1,
+                        transform: [{ rotate: angle + 'deg' }],
+                        width: length,
+                      },
+                    ]}
+                  />
+                );
+              })}
+            {points.map((point, index) => (
+              <View
+                key={'point-' + index}
+                style={[styles.linePoint, { left: point.x - 3, top: point.y - 3 }]}
+              />
+            ))}
+          </View>
+        )}
 
         {visibleValues.length === 0 && (
           <Text style={styles.emptyLabel}>Press Start to stream data</Text>
@@ -128,29 +166,20 @@ const styles = StyleSheet.create({
     bottom: CHART_HEIGHT / 2,
     backgroundColor: '#31505a',
   },
-  barRow: {
-    height: CHART_HEIGHT,
-    flexDirection: 'row',
-    paddingHorizontal: 4,
-  },
-  barColumn: {
-    flex: 1,
-    height: CHART_HEIGHT,
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  bar: {
+  lineSegment: {
     position: 'absolute',
-    width: 3,
-    borderRadius: 3,
+    height: 2,
+    borderRadius: 2,
     backgroundColor: '#50e3b2',
   },
-  barPositive: {
-    bottom: CHART_HEIGHT / 2,
-  },
-  barNegative: {
-    top: CHART_HEIGHT / 2,
+  linePoint: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#a2ffe0',
+    borderWidth: 1,
+    borderColor: '#50e3b2',
   },
   emptyLabel: {
     position: 'absolute',
