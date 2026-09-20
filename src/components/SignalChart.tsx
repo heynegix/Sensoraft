@@ -15,7 +15,7 @@ const GRID_LEVELS = [0.25, 0.5, 0.75];
 
 export function SignalChart({ label, sampleIntervalMs, values, unit }: SignalChartProps) {
   const visibleValues = values.slice(-DEFAULT_SIGNAL_CONFIG.maxChartPoints);
-  const peak = visibleValues.reduce((highest, value) => Math.max(highest, value), 0);
+  const peak = visibleValues.reduce((highest, value) => Math.max(highest, Math.abs(value)), 0);
   const scale = Math.max(MINIMUM_SCALE, peak);
 
   return (
@@ -27,29 +27,45 @@ export function SignalChart({ label, sampleIntervalMs, values, unit }: SignalCha
       <View style={styles.headerRow}>
         <Text style={styles.label}>REALTIME {label.toUpperCase()}</Text>
         <Text style={styles.scaleLabel}>
-          0 — {scale.toFixed(2)} {unit}
+          ±{scale.toFixed(2)} {unit}
         </Text>
       </View>
 
       <View style={styles.chart}>
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-          {GRID_LEVELS.map((level) => (
+          {GRID_LEVELS.flatMap((level) => [
             <View
-              key={level}
-              style={[styles.gridLine, { bottom: Math.round(CHART_HEIGHT * level) }]}
-            />
-          ))}
+              key={'positive-' + level}
+              style={[
+                styles.gridLine,
+                { bottom: Math.round(CHART_HEIGHT / 2 + (CHART_HEIGHT / 2) * level) },
+              ]}
+            />,
+            <View
+              key={'negative-' + level}
+              style={[
+                styles.gridLine,
+                { bottom: Math.round(CHART_HEIGHT / 2 - (CHART_HEIGHT / 2) * level) },
+              ]}
+            />,
+          ])}
           <View style={[styles.gridLine, styles.zeroLine]} />
         </View>
 
         <View style={styles.barRow}>
           {visibleValues.map((value, index) => {
-            const ratio = Math.min(1, Math.max(0, value / scale));
-            const height = Math.max(2, Math.round(CHART_HEIGHT * ratio));
+            const ratio = Math.min(1, Math.abs(value) / scale);
+            const height = value === 0 ? 0 : Math.max(2, Math.round((CHART_HEIGHT / 2) * ratio));
 
             return (
               <View key={index} style={styles.barColumn}>
-                <View style={[styles.bar, { height }]} />
+                <View
+                  style={[
+                    styles.bar,
+                    value >= 0 ? styles.barPositive : styles.barNegative,
+                    { height },
+                  ]}
+                />
               </View>
             );
           })}
@@ -109,25 +125,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#19303a',
   },
   zeroLine: {
-    bottom: 0,
+    bottom: CHART_HEIGHT / 2,
     backgroundColor: '#31505a',
   },
   barRow: {
     height: CHART_HEIGHT,
     flexDirection: 'row',
-    alignItems: 'flex-end',
     paddingHorizontal: 4,
   },
   barColumn: {
     flex: 1,
     height: CHART_HEIGHT,
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    position: 'relative',
   },
   bar: {
+    position: 'absolute',
     width: 3,
     borderRadius: 3,
     backgroundColor: '#50e3b2',
+  },
+  barPositive: {
+    bottom: CHART_HEIGHT / 2,
+  },
+  barNegative: {
+    top: CHART_HEIGHT / 2,
   },
   emptyLabel: {
     position: 'absolute',

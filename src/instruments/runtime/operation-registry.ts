@@ -1,4 +1,3 @@
-import { DEFAULT_SIGNAL_CONFIG } from '../../signal/constants';
 import { VectorBaselineCompensator } from '../../signal/gravity-compensation';
 import { magnitude, type Vector3 } from '../../signal/magnitude';
 import { MovingAverageFilter } from '../../signal/moving-average';
@@ -39,10 +38,19 @@ function assertKnownKeys(
   allowedKeys: readonly string[],
   path: string,
 ): void {
+  const prototype = Object.getPrototypeOf(raw);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new InstrumentValidationError(path + ' must be a plain object.');
+  }
+
   const unknownKey = Object.keys(raw).find((key) => !allowedKeys.includes(key));
   if (unknownKey !== undefined) {
     throw new InstrumentValidationError('Unknown field: ' + path + '.' + unknownKey);
   }
+}
+
+function own(raw: Readonly<Record<string, unknown>>, key: string): unknown {
+  return Object.prototype.hasOwnProperty.call(raw, key) ? raw[key] : undefined;
 }
 
 function readFiniteNumber(raw: unknown, path: string): number {
@@ -53,11 +61,7 @@ function readFiniteNumber(raw: unknown, path: string): number {
   return raw;
 }
 
-function readWindowSize(raw: unknown, path: string, fallback: number): number {
-  if (raw === undefined) {
-    return fallback;
-  }
-
+function readWindowSize(raw: unknown, path: string): number {
   if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 1 || raw > MAX_WINDOW_SIZE) {
     throw new InstrumentValidationError(
       path + ' must be an integer between 1 and ' + MAX_WINDOW_SIZE + '.',
@@ -98,10 +102,10 @@ const gravityCompensation: OperationDefinition = {
   outputType: 'vector3',
   normalize(raw, path): GravityCompensationOperation {
     assertKnownKeys(raw, ['op', 'alpha'], path);
-    const alpha =
-      raw.alpha === undefined
-        ? DEFAULT_SIGNAL_CONFIG.gravityCompensationAlpha
-        : readFiniteNumber(raw.alpha, path + '.alpha');
+    if (own(raw, 'alpha') === undefined) {
+      throw new InstrumentValidationError(path + '.alpha is required.');
+    }
+    const alpha = readFiniteNumber(own(raw, 'alpha'), path + '.alpha');
 
     if (alpha <= 0 || alpha > 1) {
       throw new InstrumentValidationError(path + '.alpha must be greater than 0 and at most 1.');
@@ -151,11 +155,7 @@ const movingAverageOperation: OperationDefinition = {
     assertKnownKeys(raw, ['op', 'windowSize'], path);
     return {
       op: 'movingAverage',
-      windowSize: readWindowSize(
-        raw.windowSize,
-        path + '.windowSize',
-        DEFAULT_SIGNAL_CONFIG.movingAverageWindowSize,
-      ),
+      windowSize: readWindowSize(own(raw, 'windowSize'), path + '.windowSize'),
     };
   },
   createProcessor(operation): CompiledOperation {
@@ -181,11 +181,7 @@ const rmsOperation: OperationDefinition = {
     assertKnownKeys(raw, ['op', 'windowSize'], path);
     return {
       op: 'rms',
-      windowSize: readWindowSize(
-        raw.windowSize,
-        path + '.windowSize',
-        DEFAULT_SIGNAL_CONFIG.rmsWindowSize,
-      ),
+      windowSize: readWindowSize(own(raw, 'windowSize'), path + '.windowSize'),
     };
   },
   createProcessor(operation): CompiledOperation {
@@ -211,7 +207,7 @@ const scaleOperation: OperationDefinition = {
     assertKnownKeys(raw, ['op', 'factor'], path);
     return {
       op: 'scale',
-      factor: readFiniteNumber(raw.factor, path + '.factor'),
+      factor: readFiniteNumber(own(raw, 'factor'), path + '.factor'),
     };
   },
   createProcessor(operation): CompiledOperation {

@@ -123,6 +123,12 @@ describe('Instrument DSL validation and compilation', () => {
         }),
       ),
     ).toThrow('sampleRateHz must be an integer between 1 and 100');
+
+    expect(() =>
+      parseInstrumentDefinition(
+        withPipeline([{ op: 'gravityCompensation' }, ...VALID_PIPELINE.slice(1)]),
+      ),
+    ).toThrow('alpha is required');
   });
 
   it('rejects incompatible pipeline types with a clear error', () => {
@@ -153,6 +159,34 @@ describe('Instrument DSL validation and compilation', () => {
     expect(() => instrument.process({ x: Number.NaN, y: 0, z: 1, timestamp: 0 })).toThrow(
       'non-finite',
     );
+  });
+
+  it('rejects definitions and operations with inherited fields', () => {
+    const inheritedDefinition = Object.create({
+      version: 1,
+      id: 'inherited',
+      name: 'Inherited',
+      sensor: { type: 'accelerometer', sampleRateHz: 20 },
+      pipeline: VALID_PIPELINE,
+      display: { type: 'line', label: 'Value', unit: 'g', precision: 3 },
+    }) as object;
+
+    expect(() => validateInstrumentDefinition(inheritedDefinition)).toThrow(
+      'Instrument definition must be an object',
+    );
+
+    const base = JSON.parse(VALID_DEFINITION_JSON) as Record<string, unknown>;
+    const inheritedOperation = Object.create({
+      op: 'gravityCompensation',
+      alpha: 0.04,
+    }) as object;
+
+    expect(() =>
+      validateInstrumentDefinition({
+        ...base,
+        pipeline: [inheritedOperation, ...VALID_PIPELINE.slice(1)],
+      }),
+    ).toThrow('pipeline[0] must be an object');
   });
 });
 

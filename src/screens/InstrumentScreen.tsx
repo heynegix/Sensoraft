@@ -3,6 +3,7 @@ import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'rea
 import { StatusBar } from 'expo-status-bar';
 
 import { SignalChart } from '../components/SignalChart';
+import { InstrumentCompileError, InstrumentValidationError } from '../instruments/dsl/errors';
 import { InstrumentRuntime } from '../instruments/runtime/runtime';
 import type { InstrumentMeasurement } from '../instruments/runtime/compiler';
 import type { InstrumentDefinition } from '../instruments/dsl/types';
@@ -27,7 +28,29 @@ interface InstrumentScreenProps {
 }
 
 export function InstrumentScreen({ definition }: InstrumentScreenProps) {
-  const runtime = useMemo(() => new InstrumentRuntime(definition), [definition]);
+  return (
+    <InstrumentScreenContent
+      key={definition.id + ':' + JSON.stringify(definition)}
+      definition={definition}
+    />
+  );
+}
+
+function InstrumentScreenContent({ definition }: InstrumentScreenProps) {
+  const runtimeState = useMemo(() => {
+    try {
+      return {
+        runtime: new InstrumentRuntime(definition),
+        errorMessage: null,
+      };
+    } catch (error) {
+      return {
+        runtime: null,
+        errorMessage: getDefinitionErrorMessage(error),
+      };
+    }
+  }, [definition]);
+  const runtime = runtimeState.runtime;
   const [status, setStatus] = useState<InstrumentStatus>('stopped');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [measurement, setMeasurement] = useState<InstrumentMeasurement>(INITIAL_MEASUREMENT);
@@ -36,16 +59,17 @@ export function InstrumentScreen({ definition }: InstrumentScreenProps) {
   const startTokenRef = useRef(0);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       startTokenRef.current += 1;
-      runtime.dispose();
+      runtime?.dispose();
     };
-  }, [runtime]);
+  }, [runtime, runtimeState.errorMessage]);
 
   const stopMeasurement = useCallback(() => {
     startTokenRef.current += 1;
-    runtime.stop();
+    runtime?.stop();
     setStatus('stopped');
     setErrorMessage(null);
     setMeasurement(INITIAL_MEASUREMENT);
@@ -53,6 +77,10 @@ export function InstrumentScreen({ definition }: InstrumentScreenProps) {
   }, [runtime]);
 
   const startMeasurement = useCallback(async () => {
+    if (runtime === null) {
+      return;
+    }
+
     if (status === 'running' || status === 'starting') {
       return;
     }
@@ -101,9 +129,14 @@ export function InstrumentScreen({ definition }: InstrumentScreenProps) {
     }
   }, [runtime, status]);
 
-  const isActive = status === 'running' || status === 'starting';
+  const displayedStatus = runtime === null ? 'error' : status;
+  const isActive = displayedStatus === 'running' || displayedStatus === 'starting';
   const statusLabel =
-    status === 'running' ? 'LIVE' : status === 'starting' ? 'STARTING' : 'STOPPED';
+    displayedStatus === 'running'
+      ? 'LIVE'
+      : displayedStatus === 'starting'
+        ? 'STARTING'
+        : 'STOPPED';
   const precision = definition.display.precision;
   const sampleIntervalMs = 1000 / definition.sensor.sampleRateHz;
 
@@ -162,18 +195,25 @@ export function InstrumentScreen({ definition }: InstrumentScreenProps) {
           </View>
         </View>
 
-        {errorMessage !== null && (
+        {(runtimeState.errorMessage ?? errorMessage) !== null && (
           <View style={styles.errorCard}>
-            <Text style={styles.errorTitle}>INSTRUMENT UNAVAILABLE</Text>
-            <Text style={styles.errorText}>{errorMessage}</Text>
+            <Text style={styles.errorTitle}>
+              {runtime === null ? 'INVALID DEFINITION' : 'INSTRUMENT UNAVAILABLE'}
+            </Text>
+            <Text style={styles.errorText}>{runtimeState.errorMessage ?? errorMessage}</Text>
           </View>
         )}
 
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={isActive ? 'Stop instrument' : 'Start instrument'}
+          disabled={runtime === null}
           onPress={isActive ? stopMeasurement : startMeasurement}
-          style={({ pressed }) => [styles.actionButton, pressed && styles.actionButtonPressed]}
+          style={({ pressed }) => [
+            styles.actionButton,
+            runtime === null && styles.actionButtonDisabled,
+            pressed && runtime !== null && styles.actionButtonPressed,
+          ]}
         >
           <Text style={styles.actionButtonText}>{isActive ? 'Stop' : 'Start measuring'}</Text>
           <Text style={styles.actionButtonArrow}>{isActive ? '■' : '→'}</Text>
@@ -194,6 +234,18 @@ function getStartErrorMessage(error: unknown): string {
   }
 
   return 'Unable to access the instrument. Try again on a physical Android device.';
+}
+
+function getDefinitionErrorMessage(error: unknown): string {
+  if (error instanceof InstrumentValidationError) {
+    return error.issues[0] ?? 'The instrument definition is invalid.';
+  }
+
+  if (error instanceof InstrumentCompileError) {
+    return 'The instrument pipeline could not be compiled. Check its operations.';
+  }
+
+  return 'The instrument definition could not be loaded.';
 }
 
 function AxisValue({ axis, value }: { axis: string; value: number }) {
@@ -403,6 +455,9 @@ const styles = StyleSheet.create({
   },
   actionButtonPressed: {
     opacity: 0.78,
+  },
+  actionButtonDisabled: {
+    opacity: 0.45,
   },
   actionButtonText: {
     color: '#071813',

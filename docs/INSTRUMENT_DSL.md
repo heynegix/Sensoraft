@@ -110,8 +110,8 @@ The validator reports:
 - Empty pipelines are rejected.
 - Pipelines are limited to 20 operations.
 - Accelerometer sample rate is limited to 1–100 Hz.
-- gravityCompensation.alpha must satisfy 0 < alpha <= 1.
-- Moving-average and RMS windows must be integers from 1 through 500.
+- gravityCompensation.alpha is required and must satisfy 0 < alpha <= 1.
+- movingAverage.windowSize and rms.windowSize are required integers from 1 through 500.
 - scale.factor and display precision must be finite numbers.
 - NaN and Infinity are rejected for definition values and runtime sensor samples.
 - A pipeline must be type-compatible and end in a scalar value.

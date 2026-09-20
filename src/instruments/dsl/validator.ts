@@ -14,7 +14,16 @@ const MAX_PIPELINE_LENGTH = 20;
 type JsonObject = Record<string, unknown>;
 
 function isObject(value: unknown): value is JsonObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function own(object: JsonObject, key: string): unknown {
+  return Object.prototype.hasOwnProperty.call(object, key) ? object[key] : undefined;
 }
 
 function addUnknownFieldIssues(
@@ -64,7 +73,7 @@ function parseSensor(value: unknown, issues: string[]): InstrumentSensorDefiniti
   }
 
   addUnknownFieldIssues(value, ['type', 'sampleRateHz'], 'sensor', issues);
-  const sensorType = value.type;
+  const sensorType = own(value, 'type');
   if (sensorType !== 'accelerometer') {
     issues.push(
       typeof sensorType === 'string'
@@ -73,7 +82,7 @@ function parseSensor(value: unknown, issues: string[]): InstrumentSensorDefiniti
     );
   }
 
-  const sampleRateHz = readFiniteNumber(value.sampleRateHz, 'sensor.sampleRateHz', issues);
+  const sampleRateHz = readFiniteNumber(own(value, 'sampleRateHz'), 'sensor.sampleRateHz', issues);
   if (
     sampleRateHz !== undefined &&
     (!Number.isInteger(sampleRateHz) || sampleRateHz < 1 || sampleRateHz > 100)
@@ -109,14 +118,15 @@ function parsePipeline(value: unknown, issues: string[]): PipelineOperation[] {
       return;
     }
 
-    if (typeof rawOperation.op !== 'string') {
+    const operationName = own(rawOperation, 'op');
+    if (typeof operationName !== 'string') {
       issues.push(path + '.op must be a supported operation name.');
       return;
     }
 
-    const definition = getOperationDefinition(rawOperation.op);
+    const definition = getOperationDefinition(operationName);
     if (definition === undefined) {
-      issues.push('Unknown operation: ' + rawOperation.op);
+      issues.push('Unknown operation: ' + operationName);
       return;
     }
 
@@ -141,17 +151,17 @@ function parseDisplay(value: unknown, issues: string[]): InstrumentDisplayDefini
   }
 
   addUnknownFieldIssues(value, ['type', 'label', 'unit', 'precision'], 'display', issues);
-  const displayType = value.type;
+  const displayType = own(value, 'type');
   if (displayType !== 'line' && displayType !== 'number') {
     issues.push('display.type must be line or number.');
   }
 
-  const label = readNonEmptyString(value.label, 'display.label', issues);
-  const unit = readNonEmptyString(value.unit, 'display.unit', issues);
+  const label = readNonEmptyString(own(value, 'label'), 'display.label', issues);
+  const unit = readNonEmptyString(own(value, 'unit'), 'display.unit', issues);
   const precision =
-    value.precision === undefined
+    own(value, 'precision') === undefined
       ? 3
-      : readFiniteNumber(value.precision, 'display.precision', issues);
+      : readFiniteNumber(own(value, 'precision'), 'display.precision', issues);
 
   if (precision !== undefined && (!Number.isInteger(precision) || precision < 0 || precision > 9)) {
     issues.push('display.precision must be an integer between 0 and 9.');
@@ -227,21 +237,21 @@ export function validateInstrumentDefinition(input: unknown): InstrumentDefiniti
     issues,
   );
 
-  if (input.version !== 1) {
+  if (own(input, 'version') !== 1) {
     issues.push('version must be 1.');
   }
 
-  const id = readNonEmptyString(input.id, 'id', issues);
-  const name = readNonEmptyString(input.name, 'name', issues);
+  const id = readNonEmptyString(own(input, 'id'), 'id', issues);
+  const name = readNonEmptyString(own(input, 'name'), 'name', issues);
   const description =
-    input.description === undefined
+    own(input, 'description') === undefined
       ? ''
-      : typeof input.description === 'string'
-        ? input.description.trim()
+      : typeof own(input, 'description') === 'string'
+        ? (own(input, 'description') as string).trim()
         : (issues.push('description must be a string.'), '');
-  const sensor = parseSensor(input.sensor, issues);
-  const pipeline = parsePipeline(input.pipeline, issues);
-  const display = parseDisplay(input.display, issues);
+  const sensor = parseSensor(own(input, 'sensor'), issues);
+  const pipeline = parsePipeline(own(input, 'pipeline'), issues);
+  const display = parseDisplay(own(input, 'display'), issues);
   validatePipelineTypes(sensor, pipeline, issues);
 
   if (
