@@ -3,6 +3,7 @@ import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'rea
 import { StatusBar } from 'expo-status-bar';
 
 import { SignalChart } from '../components/SignalChart';
+import type { ChartSample } from '../components/chart-history';
 import { InstrumentCompileError, InstrumentValidationError } from '../instruments/dsl/errors';
 import { InstrumentRuntime } from '../instruments/runtime/runtime';
 import type { InstrumentMeasurement } from '../instruments/runtime/compiler';
@@ -61,7 +62,7 @@ function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) 
   const [status, setStatus] = useState<InstrumentStatus>('stopped');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [measurement, setMeasurement] = useState<InstrumentMeasurement>(INITIAL_MEASUREMENT);
-  const [history, setHistory] = useState<number[]>([]);
+  const [history, setHistory] = useState<ChartSample[]>([]);
   const mountedRef = useRef(true);
   const startTokenRef = useRef(0);
   const lastUiUpdateTimestampRef = useRef<number | null>(null);
@@ -120,7 +121,13 @@ function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) 
 
           setMeasurement(nextMeasurement);
           setHistory((current) => {
-            const nextHistory = [...current, nextMeasurement.value];
+            const nextHistory = [
+              ...current,
+              {
+                timestamp: nextMeasurement.timestamp,
+                value: nextMeasurement.value,
+              },
+            ];
             return nextHistory.slice(-DEFAULT_SIGNAL_CONFIG.maxChartPoints);
           });
         },
@@ -157,7 +164,6 @@ function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) 
         ? 'STARTING'
         : 'STOPPED';
   const precision = definition.display.precision;
-  const sampleIntervalMs = 1000 / definition.sensor.sampleRateHz;
   const sensorMetadata = SENSOR_METADATA[definition.sensor.type];
 
   return (
@@ -207,9 +213,8 @@ function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) 
         {definition.display.type === 'line' && (
           <SignalChart
             label={definition.display.label}
-            sampleIntervalMs={sampleIntervalMs}
+            samples={history}
             unit={definition.display.unit}
-            values={history}
           />
         )}
 
