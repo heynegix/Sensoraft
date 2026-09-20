@@ -15,12 +15,18 @@ Sensoraft is a local-first Expo and React Native app that turns smartphone senso
 - Current vibration value in `m/s² RMS`.
 - Lightweight real-time history chart with a bounded 90-sample buffer.
 - Friendly unavailable-sensor error state.
-- Unit tests for magnitude, moving average, and RMS.
+- Version 1 Instrument DSL with strict JSON parsing, validation, operation type checking, and a compiled runtime.
+- Declarative Vibration Meter definition using gravity compensation, magnitude, moving average, RMS, and scale operations.
+- Unit tests for signal primitives, DSL validation, compilation, runtime output, and lifecycle cleanup.
 - No account, cloud backend, AI API, RevenueCat, database, BLE, or FFT.
 
 ## Vision
 
-The long-term product is an instrument builder: a user describes what they want to measure and Sensoraft generates a sensor pipeline and display. Future phases may add gyroscope, magnetometer, barometer, a validated Instrument DSL, saved instruments, CSV export, AI-assisted generation, BLE, and multi-device measurement. Those features are intentionally not part of this MVP.
+The long-term product is an instrument builder: a user describes what they want to measure and Sensoraft generates a sensor pipeline and display. Future phases may add gyroscope, magnetometer, barometer, saved instruments, CSV export, AI-assisted generation, BLE, and multi-device measurement. AI generation is intentionally not part of this phase.
+
+## Instrument DSL
+
+Phase 2 adds a small, allowlisted Instrument DSL. Definitions are validated and compiled before a sensor starts; JSON cannot execute arbitrary JavaScript. See [docs/INSTRUMENT_DSL.md](docs/INSTRUMENT_DSL.md) for the schema, type flow, validation rules, and security model.
 
 ## Requirements
 
@@ -86,14 +92,26 @@ src/
 │  ├─ gravity-compensation.ts
 │  ├─ moving-average.ts
 │  ├─ rms.ts
-│  └─ processor.ts          # ordered signal pipeline
+│  └─ ...                   # pure signal primitives used by registry processors
 ├─ instruments/
-│  ├─ types.ts              # Sensor / transform / display DSL-ready types
-│  └─ vibration-meter.ts    # instrument definition and engine
+│  ├─ dsl/
+│  │  ├─ types.ts           # versioned DSL types
+│  │  ├─ parser.ts          # JSON parsing boundary
+│  │  ├─ validator.ts       # strict schema and type-flow checks
+│  │  └─ errors.ts
+│  ├─ definitions/
+│  │  └─ vibration-meter.ts # declarative Vibration Meter definition
+│  ├─ runtime/
+│  │  ├─ operation-registry.ts
+│  │  ├─ compiler.ts
+│  │  ├─ sensor-factory.ts
+│  │  └─ runtime.ts
+│  └─ types.ts              # compatibility re-export
 ├─ components/
 │  └─ SignalChart.tsx       # bounded chart presentation
 └─ screens/
-   └─ VibrationMeterScreen.tsx # UI orchestration and user actions
+   ├─ InstrumentScreen.tsx      # generic definition-driven UI
+   └─ VibrationMeterScreen.tsx  # compatibility entry point
 ```
 
 The current pipeline is:
@@ -107,7 +125,7 @@ accelerometer x/y/z in g
   → m/s² display and chart
 ```
 
-The sensor adapter does not know about UI, the signal processor does not know about React Native, and the instrument definition describes the sensor/pipeline/display boundary that future DSL work can build on. The screen owns one `SensorManager`, removes its subscription on Stop and unmount, and keeps only a bounded chart history.
+The sensor adapter does not know about UI, the operation registry does not know about React Native, and the generic screen receives only compiled runtime measurements. The runtime owns one `SensorController`, removes its subscription on Stop and dispose, and keeps only a bounded chart history.
 
 ## License
 

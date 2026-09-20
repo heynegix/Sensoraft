@@ -1,4 +1,4 @@
-import type { SensorAdapter, SensorSubscription } from './types';
+import type { SensorAdapter, SensorController, SensorSubscription } from './types';
 
 export class SensorUnavailableError extends Error {
   public constructor(sensorName: string) {
@@ -7,7 +7,7 @@ export class SensorUnavailableError extends Error {
   }
 }
 
-export class SensorManager<Sample> {
+export class SensorManager<Sample> implements SensorController<Sample> {
   private subscription: SensorSubscription | null = null;
   private startRequestId = 0;
 

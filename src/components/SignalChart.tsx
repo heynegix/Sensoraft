@@ -3,6 +3,8 @@ import { StyleSheet, Text, View } from 'react-native';
 import { DEFAULT_SIGNAL_CONFIG } from '../signal/constants';
 
 interface SignalChartProps {
+  readonly label: string;
+  readonly sampleIntervalMs: number;
   readonly values: readonly number[];
   readonly unit: string;
 }
@@ -11,15 +13,19 @@ const CHART_HEIGHT = 180;
 const MINIMUM_SCALE = 0.25;
 const GRID_LEVELS = [0.25, 0.5, 0.75];
 
-export function SignalChart({ values, unit }: SignalChartProps) {
+export function SignalChart({ label, sampleIntervalMs, values, unit }: SignalChartProps) {
   const visibleValues = values.slice(-DEFAULT_SIGNAL_CONFIG.maxChartPoints);
   const peak = visibleValues.reduce((highest, value) => Math.max(highest, value), 0);
   const scale = Math.max(MINIMUM_SCALE, peak);
 
   return (
-    <View accessible accessibilityLabel={`Realtime vibration chart in ${unit}`} style={styles.card}>
+    <View
+      accessible
+      accessibilityLabel={'Realtime ' + label + ' chart in ' + unit}
+      style={styles.card}
+    >
       <View style={styles.headerRow}>
-        <Text style={styles.label}>REALTIME SIGNAL</Text>
+        <Text style={styles.label}>REALTIME {label.toUpperCase()}</Text>
         <Text style={styles.scaleLabel}>
           0 — {scale.toFixed(2)} {unit}
         </Text>
@@ -56,7 +62,7 @@ export function SignalChart({ values, unit }: SignalChartProps) {
 
       <View style={styles.footerRow}>
         <Text style={styles.footerText}>
-          PAST {Math.round((visibleValues.length * DEFAULT_SIGNAL_CONFIG.sensorIntervalMs) / 1000)}s
+          PAST {Math.round((visibleValues.length * sampleIntervalMs) / 1000)}s
         </Text>
         <Text style={styles.footerText}>{visibleValues.length} samples</Text>
       </View>
