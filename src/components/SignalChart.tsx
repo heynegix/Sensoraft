@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { getChartElapsedMs, type ChartSample } from './chart-history';
+import { getChartDurationMs, type ChartSample } from './chart-history';
 import { DEFAULT_SIGNAL_CONFIG } from '../signal/constants';
 
 interface SignalChartProps {
@@ -18,7 +18,7 @@ export function SignalChart({ label, samples, unit }: SignalChartProps) {
   const [chartWidth, setChartWidth] = useState(0);
   const visibleSamples = samples.slice(-DEFAULT_SIGNAL_CONFIG.maxChartPoints);
   const visibleValues = visibleSamples.map((sample) => sample.value);
-  const elapsedMs = getChartElapsedMs(visibleSamples);
+  const durationMs = getChartDurationMs(visibleSamples);
   const peak = visibleValues.reduce(
     (highest, value) => Math.max(highest, Number.isFinite(value) ? Math.abs(value) : 0),
     0,
@@ -117,7 +117,7 @@ export function SignalChart({ label, samples, unit }: SignalChartProps) {
       </View>
 
       <View style={styles.footerRow}>
-        <Text style={styles.footerText}>PAST {Math.round(elapsedMs / 1000)}s</Text>
+        <Text style={styles.footerText}>PAST {Math.round(durationMs / 1000)}s</Text>
         <Text style={styles.footerText}>{visibleValues.length} samples</Text>
       </View>
     </View>

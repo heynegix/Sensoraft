@@ -1,4 +1,9 @@
-import { getChartElapsedMs, type ChartSample } from '../src/components/chart-history';
+import {
+  getChartDurationMs,
+  getChartElapsedMs,
+  getChartSampleIntervalMs,
+  type ChartSample,
+} from '../src/components/chart-history';
 
 describe('chart history timing', () => {
   it('uses the timestamps of samples actually added to the UI history', () => {
@@ -9,6 +14,8 @@ describe('chart history timing', () => {
     ];
 
     expect(getChartElapsedMs(samples)).toBe(80);
+    expect(getChartSampleIntervalMs(samples)).toBe(40);
+    expect(getChartDurationMs(samples)).toBe(120);
   });
 
   it('returns zero when fewer than two samples are available', () => {

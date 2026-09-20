@@ -62,7 +62,7 @@ function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) 
   const [status, setStatus] = useState<InstrumentStatus>('stopped');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [measurement, setMeasurement] = useState<InstrumentMeasurement>(INITIAL_MEASUREMENT);
-  const [history, setHistory] = useState<ChartSample[]>([]);
+  const [chartSamples, setChartSamples] = useState<ChartSample[]>([]);
   const mountedRef = useRef(true);
   const startTokenRef = useRef(0);
   const lastUiUpdateTimestampRef = useRef<number | null>(null);
@@ -82,7 +82,7 @@ function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) 
     setStatus('stopped');
     setErrorMessage(null);
     setMeasurement(INITIAL_MEASUREMENT);
-    setHistory([]);
+    setChartSamples([]);
     lastUiUpdateTimestampRef.current = null;
   }, [runtime]);
 
@@ -100,7 +100,7 @@ function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) 
     setStatus('starting');
     setErrorMessage(null);
     setMeasurement(INITIAL_MEASUREMENT);
-    setHistory([]);
+    setChartSamples([]);
     lastUiUpdateTimestampRef.current = null;
 
     try {
@@ -120,15 +120,15 @@ function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) 
           lastUiUpdateTimestampRef.current = nextMeasurement.timestamp;
 
           setMeasurement(nextMeasurement);
-          setHistory((current) => {
-            const nextHistory = [
+          setChartSamples((current) => {
+            const nextChartSamples = [
               ...current,
               {
                 timestamp: nextMeasurement.timestamp,
                 value: nextMeasurement.value,
               },
             ];
-            return nextHistory.slice(-DEFAULT_SIGNAL_CONFIG.maxChartPoints);
+            return nextChartSamples.slice(-DEFAULT_SIGNAL_CONFIG.maxChartPoints);
           });
         },
         () => {
@@ -213,7 +213,7 @@ function InstrumentScreenContent({ definition, onBack }: InstrumentScreenProps) 
         {definition.display.type === 'line' && (
           <SignalChart
             label={definition.display.label}
-            samples={history}
+            samples={chartSamples}
             unit={definition.display.unit}
           />
         )}
