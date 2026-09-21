@@ -72,6 +72,7 @@ export async function generateWithProvider(
           { role: 'system', content: SYSTEM_INSTRUCTION },
           { role: 'user', content: buildGenerationPrompt(prompt, repairIssues) },
         ],
+        thinking: { type: 'disabled' },
         stream: false,
         max_tokens: MAX_OUTPUT_TOKENS,
       }),

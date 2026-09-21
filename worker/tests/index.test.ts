@@ -130,6 +130,7 @@ describe('Worker /generate boundary', () => {
     >;
     expect(providerBody.model).toBe('deepseek-v4.1-flash:free');
     expect(providerBody.stream).toBe(false);
+    expect(providerBody.thinking).toEqual({ type: 'disabled' });
     expect(providerBody.response_format).toBeUndefined();
     expect(providerBody.messages).toEqual(
       expect.arrayContaining([
