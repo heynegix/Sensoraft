@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import worker, { handleGenerate } from '../src/index';
-import { AI_TIMEOUT_MS } from '../src/schema';
+import { AI_TIMEOUT_MS, SYSTEM_INSTRUCTION } from '../src/schema';
 
 const env = {
   TOKENHARBOR_API_KEY: 'test-key',
@@ -228,6 +228,56 @@ describe('Worker /generate boundary', () => {
     expect(response.status).toBe(422);
     expect(await readJson(response)).toMatchObject({
       error: { code: 'MODEL_OUTPUT_INVALID' },
+    });
+  });
+
+  it('explicitly restricts display types in the planner instruction', () => {
+    expect(SYSTEM_INSTRUCTION).toContain('display.type must be exactly "line" or "number".');
+    expect(SYSTEM_INSTRUCTION).toContain(
+      'Never use "gauge", "chart", "meter", "graph", or any other display type.',
+    );
+    expect(SYSTEM_INSTRUCTION).toContain(
+      'Prefer "line" for continuously changing sensor measurements.',
+    );
+    expect(SYSTEM_INSTRUCTION).toContain(
+      'Use "number" only when a single current value is appropriate.',
+    );
+  });
+
+  it('rejects a gauge display type from model output', async () => {
+    const fetchImpl = tokenHarborFetch({
+      status: 'success',
+      reason: 'Candidate.',
+      instrument: { ...validInstrument, display: { ...validInstrument.display, type: 'gauge' } },
+    });
+    const response = await handleGenerate(
+      request(JSON.stringify({ prompt: 'Make an instrument.' })),
+      env,
+      { fetchImpl },
+    );
+
+    expect(response.status).toBe(422);
+    expect(await readJson(response)).toMatchObject({
+      error: { code: 'MODEL_OUTPUT_INVALID' },
+    });
+  });
+
+  it('accepts a line display type from model output', async () => {
+    const fetchImpl = tokenHarborFetch({
+      status: 'success',
+      reason: 'Candidate.',
+      instrument: validInstrument,
+    });
+    const response = await handleGenerate(
+      request(JSON.stringify({ prompt: 'Make an instrument.' })),
+      env,
+      { fetchImpl },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toMatchObject({
+      status: 'success',
+      instrument: { display: { type: 'line' } },
     });
   });
 
