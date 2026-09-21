@@ -32,7 +32,7 @@ const validInstrument = {
 
 const GENERATED_ID_PATTERN = /^generated-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-function tokenHarborFetch(output: unknown) {
+function tokenHarborFetch(output: unknown, responseHeaders: HeadersInit = {}) {
   return vi.fn().mockResolvedValue(
     new Response(
       JSON.stringify({
@@ -40,7 +40,7 @@ function tokenHarborFetch(output: unknown) {
       }),
       {
         status: 200,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...responseHeaders },
       },
     ),
   );
@@ -145,6 +145,44 @@ describe('Worker /generate boundary', () => {
         }),
       ]),
     );
+  });
+
+  it('logs provider timing stages without logging request or response content', async () => {
+    const timingLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const privatePrompt = 'private prompt must stay out of logs';
+    const privateReason = 'private model response must stay out of logs';
+    const fetchImpl = tokenHarborFetch(
+      {
+        status: 'success',
+        reason: privateReason,
+        instrument: validInstrument,
+      },
+      { 'X-Request-Id': 'trace-abc-123' },
+    );
+
+    const response = await handleGenerate(request(JSON.stringify({ prompt: privatePrompt })), env, {
+      fetchImpl,
+    });
+
+    expect(response.status).toBe(200);
+    const lines = timingLog.mock.calls.map(([message]) => String(message));
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        '[ai-timing] fetch-start',
+        expect.stringMatching(
+          /^\[ai-timing\] headers \d+ms status=200 x-request-id=trace-abc-123$/,
+        ),
+        expect.stringMatching(/^\[ai-timing\] body \d+ms bytes=\d+$/),
+        expect.stringMatching(/^\[ai-timing\] provider-json \d+ms$/),
+        expect.stringMatching(/^\[ai-timing\] content \d+ms$/),
+        expect.stringMatching(/^\[ai-timing\] model-json \d+ms$/),
+        expect.stringMatching(/^\[ai-timing\] total \d+ms$/),
+      ]),
+    );
+    const joinedLogs = lines.join('\n');
+    expect(joinedLogs).not.toContain(privatePrompt);
+    expect(joinedLogs).not.toContain(privateReason);
+    expect(joinedLogs).not.toContain(env.TOKENHARBOR_API_KEY);
   });
 
   it.each(['Desk Vibration', 'DESK_VIBRATION', 'desk--vibration'])(
@@ -394,6 +432,7 @@ describe('Worker /generate boundary', () => {
   });
 
   it('maps provider timeouts to a distinct timeout error', async () => {
+    const timingLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
     const slow = vi.fn(() => new Promise<Response>(() => undefined));
     const timedOut = await handleGenerate(
       request(JSON.stringify({ prompt: 'measure motion' })),
@@ -408,5 +447,12 @@ describe('Worker /generate boundary', () => {
         message: 'Instrument generation took too long. Please try again.',
       },
     });
+    const lines = timingLog.mock.calls.map(([message]) => String(message));
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^\[ai-timing\] timeout after \d+ms stage=fetch$/),
+        expect.stringMatching(/^\[ai-timing\] total \d+ms$/),
+      ]),
+    );
   });
 });
