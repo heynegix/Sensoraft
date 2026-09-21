@@ -258,6 +258,25 @@ function validateInstrument(value: unknown): string[] {
   return issues;
 }
 
+function replaceGeneratedInstrumentId(value: JsonObject): JsonObject {
+  if (own(value, 'status') !== 'success') {
+    return value;
+  }
+
+  const instrument = own(value, 'instrument');
+  if (!isPlainObject(instrument)) {
+    return value;
+  }
+
+  return {
+    ...value,
+    instrument: {
+      ...instrument,
+      id: 'generated-' + crypto.randomUUID().toLowerCase(),
+    },
+  };
+}
+
 function validateGenerationResult(value: unknown): JsonObject {
   const issues: string[] = [];
   if (!isPlainObject(value)) {
@@ -271,19 +290,20 @@ function validateGenerationResult(value: unknown): JsonObject {
   }
   readString(own(value, 'reason'), 'reason', issues, MAX_REASON_LENGTH);
 
+  const normalizedValue = replaceGeneratedInstrumentId(value);
   if (status === 'unsupported') {
     if (own(value, 'instrument') !== null) {
       issues.push('Unsupported results must set instrument to null.');
     }
   } else if (status === 'success') {
-    issues.push(...validateInstrument(own(value, 'instrument')));
+    issues.push(...validateInstrument(own(normalizedValue, 'instrument')));
   }
 
   if (issues.length > 0) {
     throw new ModelOutputInvalidError(issues);
   }
 
-  return value;
+  return normalizedValue;
 }
 
 function jsonResponse(

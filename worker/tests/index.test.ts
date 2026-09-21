@@ -30,6 +30,8 @@ const validInstrument = {
   display: { type: 'line', label: 'Vibration', unit: 'm/s²', precision: 3 },
 };
 
+const GENERATED_ID_PATTERN = /^generated-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 function tokenHarborFetch(output: unknown) {
   return vi.fn().mockResolvedValue(
     new Response(
@@ -116,7 +118,10 @@ describe('Worker /generate boundary', () => {
     expect(response.status).toBe(200);
     expect(await readJson(response)).toMatchObject({
       status: 'success',
-      instrument: validInstrument,
+      instrument: {
+        ...validInstrument,
+        id: expect.stringMatching(GENERATED_ID_PATTERN),
+      },
     });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, init] = fetchImpl.mock.calls[0] ?? [];
@@ -140,6 +145,54 @@ describe('Worker /generate boundary', () => {
         }),
       ]),
     );
+  });
+
+  it.each(['Desk Vibration', 'DESK_VIBRATION', 'desk--vibration'])(
+    'replaces unsafe generated id %s without a repair request',
+    async (id) => {
+      const fetchImpl = tokenHarborFetch({
+        status: 'success',
+        reason: 'Candidate.',
+        instrument: { ...validInstrument, id },
+      });
+      const response = await handleGenerate(
+        request(JSON.stringify({ prompt: 'Make an instrument.' })),
+        env,
+        { fetchImpl },
+      );
+
+      expect(response.status).toBe(200);
+      expect(await readJson(response)).toMatchObject({
+        status: 'success',
+        instrument: { id: expect.stringMatching(GENERATED_ID_PATTERN) },
+      });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('does not auto-correct an invalid pipeline while replacing the id', async () => {
+    const fetchImpl = tokenHarborFetch({
+      status: 'success',
+      reason: 'Candidate.',
+      instrument: {
+        ...validInstrument,
+        id: 'Desk Vibration',
+        pipeline: [{ op: 'fooOperation' }],
+      },
+    });
+    const response = await handleGenerate(
+      request(JSON.stringify({ prompt: 'Make an instrument.' })),
+      env,
+      { fetchImpl },
+    );
+
+    expect(response.status).toBe(422);
+    expect(await readJson(response)).toMatchObject({
+      error: {
+        code: 'MODEL_OUTPUT_INVALID',
+        issues: expect.arrayContaining(['Unknown operation: fooOperation']),
+      },
+    });
   });
 
   it('returns unsupported without creating an instrument', async () => {
