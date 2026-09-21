@@ -1,11 +1,19 @@
 import { compileInstrument } from '../src/instruments/runtime/compiler';
-import { GenerationOutputError, PromptValidationError } from '../src/ai/generation-errors';
+import {
+  GenerationOutputError,
+  GenerationRequestError,
+  GenerationTimeoutError,
+  GenerationUnavailableError,
+  PromptValidationError,
+} from '../src/ai/generation-errors';
 import { LatestRequestGate } from '../src/ai/request-gate';
 import {
+  DEFAULT_TIMEOUT_MS,
   parseGenerationResult,
   RemoteInstrumentGenerator,
   validateGenerationPrompt,
 } from '../src/ai/remote-instrument-generator';
+import { getGenerationErrorMessage } from '../src/ai/generation-error-message';
 
 const VALID_INSTRUMENT = {
   version: 1,
@@ -27,7 +35,19 @@ function successResult(instrument: unknown = VALID_INSTRUMENT) {
   return { status: 'success', reason: 'This is measurable with a supported sensor.', instrument };
 }
 
+function pendingFetch(_endpoint: URL | RequestInfo, init?: RequestInit): Promise<Response> {
+  return new Promise<Response>((_, reject) => {
+    init?.signal?.addEventListener('abort', () => reject(new Error('request aborted')), {
+      once: true,
+    });
+  });
+}
+
 describe('natural-language instrument generation', () => {
+  it('keeps the app timeout longer than the Worker timeout budget', () => {
+    expect(DEFAULT_TIMEOUT_MS).toBe(50_000);
+  });
+
   it('rejects blank and oversized prompts before making a request', () => {
     expect(() => validateGenerationPrompt('   ')).toThrow(PromptValidationError);
     expect(() => validateGenerationPrompt('x'.repeat(501))).toThrow(PromptValidationError);
@@ -137,6 +157,91 @@ describe('natural-language instrument generation', () => {
 
     await expect(generator.generate('Build a meter')).rejects.toThrow(GenerationOutputError);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('classifies a local request timeout separately from a network failure', async () => {
+    const fetchImpl = jest.fn(pendingFetch);
+    const generator = new RemoteInstrumentGenerator({
+      endpoint: 'https://example.test',
+      fetchImpl,
+      timeoutMs: 5,
+    });
+
+    await expect(generator.generate('Build a meter')).rejects.toBeInstanceOf(
+      GenerationTimeoutError,
+    );
+  });
+
+  it('applies the timeout to the repair request while keeping repair to one retry', async () => {
+    const invalid = successResult({ ...VALID_INSTRUMENT, pipeline: [{ op: 'fooOperation' }] });
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(invalid), { status: 200 }))
+      .mockImplementationOnce(pendingFetch);
+    const generator = new RemoteInstrumentGenerator({
+      endpoint: 'https://example.test',
+      fetchImpl,
+      timeoutMs: 5,
+    });
+
+    await expect(generator.generate('Build a meter')).rejects.toBeInstanceOf(
+      GenerationTimeoutError,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('distinguishes Worker timeout and provider unavailability from network errors', async () => {
+    const timeoutResponse = new Response(
+      JSON.stringify({
+        error: {
+          code: 'AI_TIMEOUT',
+          message: 'Instrument generation took too long. Please try again.',
+        },
+      }),
+      { status: 504 },
+    );
+    const unavailableResponse = new Response(
+      JSON.stringify({
+        error: {
+          code: 'UPSTREAM_UNAVAILABLE',
+          message: 'Instrument generation is temporarily unavailable.',
+        },
+      }),
+      { status: 502 },
+    );
+
+    await expect(
+      new RemoteInstrumentGenerator({
+        endpoint: 'https://example.test',
+        fetchImpl: jest.fn().mockResolvedValue(timeoutResponse),
+      }).generate('Build a meter'),
+    ).rejects.toBeInstanceOf(GenerationTimeoutError);
+
+    await expect(
+      new RemoteInstrumentGenerator({
+        endpoint: 'https://example.test',
+        fetchImpl: jest.fn().mockResolvedValue(unavailableResponse),
+      }).generate('Build a meter'),
+    ).rejects.toBeInstanceOf(GenerationUnavailableError);
+
+    await expect(
+      new RemoteInstrumentGenerator({
+        endpoint: 'https://example.test',
+        fetchImpl: jest.fn().mockRejectedValue(new Error('network down')),
+      }).generate('Build a meter'),
+    ).rejects.toBeInstanceOf(GenerationRequestError);
+  });
+
+  it('shows distinct user-facing messages for timeout, provider, and network errors', () => {
+    expect(getGenerationErrorMessage(new GenerationTimeoutError())).toBe(
+      'Instrument generation took too long. Please try again.',
+    );
+    expect(getGenerationErrorMessage(new GenerationUnavailableError())).toBe(
+      'AI generation is temporarily unavailable. Please try again.',
+    );
+    expect(getGenerationErrorMessage(new GenerationRequestError())).toBe(
+      'Check your connection and try again.',
+    );
   });
 });
 

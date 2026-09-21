@@ -4,7 +4,7 @@ export const MAX_REASON_LENGTH = 240;
 export const MAX_REQUEST_BODY_BYTES = 16_384;
 export const MAX_UPSTREAM_RESPONSE_BYTES = 128_000;
 export const MAX_REPAIR_ISSUES = 10;
-export const AI_TIMEOUT_MS = 18_000;
+export const AI_TIMEOUT_MS = 45_000;
 
 export interface WorkerEnv {
   readonly TOKENHARBOR_API_KEY?: string;

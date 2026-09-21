@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import worker, { handleGenerate } from '../src/index';
+import { AI_TIMEOUT_MS } from '../src/schema';
 
 const env = {
   TOKENHARBOR_API_KEY: 'test-key',
@@ -60,6 +61,10 @@ afterEach(() => {
 });
 
 describe('Worker /generate boundary', () => {
+  it('uses a 45-second provider timeout budget', () => {
+    expect(AI_TIMEOUT_MS).toBe(45_000);
+  });
+
   it('rejects invalid method and path without calling the provider', async () => {
     const fetchImpl = tokenHarborFetch({});
 
@@ -284,7 +289,7 @@ describe('Worker /generate boundary', () => {
     });
   });
 
-  it('maps provider timeouts to a generic error', async () => {
+  it('maps provider timeouts to a distinct timeout error', async () => {
     const slow = vi.fn(() => new Promise<Response>(() => undefined));
     const timedOut = await handleGenerate(
       request(JSON.stringify({ prompt: 'measure motion' })),
@@ -292,6 +297,12 @@ describe('Worker /generate boundary', () => {
       { fetchImpl: slow, timeoutMs: 5 },
     );
 
-    expect(timedOut.status).toBe(502);
+    expect(timedOut.status).toBe(504);
+    expect(await readJson(timedOut)).toEqual({
+      error: {
+        code: 'AI_TIMEOUT',
+        message: 'Instrument generation took too long. Please try again.',
+      },
+    });
   });
 });

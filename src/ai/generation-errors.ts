@@ -29,3 +29,17 @@ export class GenerationRequestError extends Error {
     this.name = 'GenerationRequestError';
   }
 }
+
+export class GenerationTimeoutError extends GenerationRequestError {
+  public constructor(message = 'Instrument generation took too long. Please try again.') {
+    super(message);
+    this.name = 'GenerationTimeoutError';
+  }
+}
+
+export class GenerationUnavailableError extends GenerationRequestError {
+  public constructor(message = 'AI generation is temporarily unavailable. Please try again.') {
+    super(message);
+    this.name = 'GenerationUnavailableError';
+  }
+}

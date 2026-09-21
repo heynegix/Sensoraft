@@ -11,12 +11,7 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
-import {
-  GenerationConfigurationError,
-  GenerationOutputError,
-  GenerationRequestError,
-  PromptValidationError,
-} from '../ai/generation-errors';
+import { getGenerationErrorMessage } from '../ai/generation-error-message';
 import { LatestRequestGate } from '../ai/request-gate';
 import { MAX_PROMPT_LENGTH, type InstrumentGenerator } from '../ai/types';
 import type { InstrumentDefinition } from '../instruments/dsl/types';
@@ -191,22 +186,6 @@ export function GenerateInstrumentScreen({
       </ScrollView>
     </SafeAreaView>
   );
-}
-
-function getGenerationErrorMessage(error: unknown): string {
-  if (error instanceof PromptValidationError || error instanceof GenerationConfigurationError) {
-    return error.message;
-  }
-
-  if (error instanceof GenerationOutputError) {
-    return 'Sensoraft could not create a safe instrument for that request. Try describing the measurement differently.';
-  }
-
-  if (error instanceof GenerationRequestError) {
-    return 'Check your connection and try again.';
-  }
-
-  return 'Try again with a short description of what you want to measure.';
 }
 
 const styles = StyleSheet.create({

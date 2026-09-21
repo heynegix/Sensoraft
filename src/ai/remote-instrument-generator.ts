@@ -6,6 +6,8 @@ import {
   GenerationConfigurationError,
   GenerationOutputError,
   GenerationRequestError,
+  GenerationTimeoutError,
+  GenerationUnavailableError,
   PromptValidationError,
 } from './generation-errors';
 import { MAX_PROMPT_LENGTH, type GenerationResult, type InstrumentGenerator } from './types';
@@ -13,7 +15,8 @@ import { MAX_PROMPT_LENGTH, type GenerationResult, type InstrumentGenerator } fr
 const MAX_REASON_LENGTH = 240;
 const MAX_RESPONSE_LENGTH = 64_000;
 const MAX_REPAIR_ISSUES = 10;
-const DEFAULT_TIMEOUT_MS = 18_000;
+// The client must outlive the Worker so it can surface the Worker's timeout response.
+export const DEFAULT_TIMEOUT_MS = 50_000;
 
 interface RemoteInstrumentGeneratorOptions {
   readonly endpoint?: string;
@@ -219,8 +222,8 @@ export class RemoteInstrumentGenerator implements InstrumentGenerator {
     });
     const timeoutPromise = new Promise<never>((_, reject) => {
       timeoutHandle = setTimeout(() => {
+        reject(new GenerationTimeoutError());
         controller.abort();
-        reject(new GenerationRequestError('The generation request timed out.'));
       }, this.timeoutMs);
     });
 
@@ -228,6 +231,10 @@ export class RemoteInstrumentGenerator implements InstrumentGenerator {
     try {
       response = await Promise.race([requestPromise, timeoutPromise]);
     } catch (error) {
+      if (timeoutHandle !== undefined) {
+        clearTimeout(timeoutHandle);
+      }
+
       if (error instanceof GenerationRequestError) {
         controller.abort();
         throw error;
@@ -261,6 +268,14 @@ export class RemoteInstrumentGenerator implements InstrumentGenerator {
         throw new GenerationOutputError(
           issues.length > 0 ? issues : 'The generated instrument is invalid.',
         );
+      }
+
+      if (response.status === 504 && workerError?.code === 'AI_TIMEOUT') {
+        throw new GenerationTimeoutError();
+      }
+
+      if (response.status === 502 && workerError?.code === 'UPSTREAM_UNAVAILABLE') {
+        throw new GenerationUnavailableError();
       }
 
       throw new GenerationRequestError();

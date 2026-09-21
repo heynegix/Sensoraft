@@ -1,4 +1,4 @@
-import { generateWithProvider } from './ai-provider';
+import { AiProviderTimeoutError, generateWithProvider } from './ai-provider';
 import { BodyTooLargeError, readTextWithLimit } from './body';
 import {
   AI_TIMEOUT_MS,
@@ -459,6 +459,14 @@ async function handleGenerate(
     const safeResult = validateGenerationResult(generated);
     return jsonResponse(safeResult, 200);
   } catch (error) {
+    if (error instanceof AiProviderTimeoutError) {
+      return errorResponse(
+        'AI_TIMEOUT',
+        'Instrument generation took too long. Please try again.',
+        504,
+      );
+    }
+
     if (error instanceof ModelOutputInvalidError) {
       return errorResponse(
         'MODEL_OUTPUT_INVALID',

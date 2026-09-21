@@ -17,6 +17,13 @@ export class AiProviderError extends Error {
   }
 }
 
+export class AiProviderTimeoutError extends AiProviderError {
+  public constructor() {
+    super();
+    this.name = 'AiProviderTimeoutError';
+  }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -72,7 +79,7 @@ export async function generateWithProvider(
     });
 
     const abortPromise = new Promise<never>((_, reject) => {
-      const rejectOnAbort = () => reject(new AiProviderError());
+      const rejectOnAbort = () => reject(new AiProviderTimeoutError());
       if (signal.aborted) {
         rejectOnAbort();
         return;
@@ -82,7 +89,10 @@ export async function generateWithProvider(
       removeAbortListener = () => signal.removeEventListener('abort', rejectOnAbort);
     });
     response = await Promise.race([fetchPromise, abortPromise]);
-  } catch {
+  } catch (error) {
+    if (error instanceof AiProviderTimeoutError || signal.aborted) {
+      throw new AiProviderTimeoutError();
+    }
     throw new AiProviderError();
   } finally {
     removeAbortListener?.();
