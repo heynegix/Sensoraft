@@ -1,6 +1,11 @@
 import { AiProviderTimeoutError, generateWithProvider } from './ai-provider';
 import { BodyTooLargeError, readTextWithLimit } from './body';
 import {
+  DebugProviderTimeoutError,
+  runDebugProvider,
+  type DebugProviderTarget,
+} from './debug-provider';
+import {
   AI_TIMEOUT_MS,
   MAX_PROMPT_LENGTH,
   MAX_REASON_LENGTH,
@@ -368,6 +373,63 @@ async function enforceRateLimits(request: Request, env: WorkerEnv): Promise<Resp
   return null;
 }
 
+async function handleDebugProvider(
+  request: Request,
+  env: WorkerEnv,
+  target: DebugProviderTarget,
+  dependencies: WorkerDependencies = {},
+): Promise<Response> {
+  const rateLimitResponse = await enforceRateLimits(request, env);
+  if (rateLimitResponse !== null) {
+    return rateLimitResponse;
+  }
+
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(
+    () => controller.abort(),
+    dependencies.timeoutMs ?? AI_TIMEOUT_MS,
+  );
+  try {
+    const result = await runDebugProvider(env, target, controller.signal, dependencies.fetchImpl);
+    return jsonResponse(
+      {
+        ok: result.ok,
+        providerStatus: result.providerStatus,
+        bodyBytes: result.bodyBytes,
+      },
+      result.ok ? 200 : 502,
+    );
+  } catch (error) {
+    if (error instanceof DebugProviderTimeoutError) {
+      return errorResponse('DEBUG_PROVIDER_TIMEOUT', 'Provider debug request took too long.', 504);
+    }
+
+    return errorResponse(
+      'DEBUG_PROVIDER_UNAVAILABLE',
+      'Provider debug request is unavailable.',
+      502,
+    );
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
+async function handleDebugProviderMinimal(
+  request: Request,
+  env: WorkerEnv,
+  dependencies: WorkerDependencies = {},
+): Promise<Response> {
+  return handleDebugProvider(request, env, 'minimal', dependencies);
+}
+
+async function handleDebugProviderModels(
+  request: Request,
+  env: WorkerEnv,
+  dependencies: WorkerDependencies = {},
+): Promise<Response> {
+  return handleDebugProvider(request, env, 'models', dependencies);
+}
+
 function parseRequestBody(value: unknown): { prompt: string; repairIssues?: string[] } {
   if (!isPlainObject(value)) {
     throw new Error('invalid_body');
@@ -509,6 +571,20 @@ async function handleGenerate(
 const worker = {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === '/debug/provider-minimal') {
+      if (request.method !== 'POST') {
+        return errorResponse('METHOD_NOT_ALLOWED', 'Use POST /debug/provider-minimal.', 405);
+      }
+
+      return handleDebugProviderMinimal(request, env);
+    }
+    if (url.pathname === '/debug/provider-models') {
+      if (request.method !== 'GET') {
+        return errorResponse('METHOD_NOT_ALLOWED', 'Use GET /debug/provider-models.', 405);
+      }
+
+      return handleDebugProviderModels(request, env);
+    }
     if (url.pathname !== '/generate') {
       return errorResponse('NOT_FOUND', 'Not found.', 404);
     }
@@ -520,5 +596,10 @@ const worker = {
   },
 };
 
-export { handleGenerate, validateGenerationResult };
+export {
+  handleDebugProviderMinimal,
+  handleDebugProviderModels,
+  handleGenerate,
+  validateGenerationResult,
+};
 export default worker;

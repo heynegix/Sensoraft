@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import worker, { handleGenerate } from '../src/index';
+import worker, {
+  handleDebugProviderMinimal,
+  handleDebugProviderModels,
+  handleGenerate,
+} from '../src/index';
 import { AI_TIMEOUT_MS, SYSTEM_INSTRUCTION } from '../src/schema';
 
 const env = {
@@ -75,6 +79,99 @@ describe('Worker /generate boundary', () => {
       status: 404,
     });
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('rejects unsupported methods for temporary provider debug endpoints', async () => {
+    const fetchImpl = tokenHarborFetch({});
+
+    await expect(
+      worker.fetch(request('', 'GET', '/debug/provider-minimal'), env),
+    ).resolves.toMatchObject({ status: 405 });
+    await expect(
+      worker.fetch(request('', 'POST', '/debug/provider-models'), env),
+    ).resolves.toMatchObject({ status: 405 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('sends only the fixed minimal chat request to the provider', async () => {
+    const timingLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response('not-an-instrument', {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain', 'X-Request-Id': 'debug-trace-1' },
+      }),
+    );
+    const response = await handleDebugProviderMinimal(
+      request(JSON.stringify({ prompt: 'do not forward this prompt' })),
+      env,
+      { fetchImpl },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toMatchObject({
+      ok: true,
+      providerStatus: 200,
+      bodyBytes: expect.any(Number),
+    });
+    const [url, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(url).toBe('https://tokenharbor.ai/v1/chat/completions');
+    expect((init as RequestInit).method).toBe('POST');
+    expect((init as RequestInit).headers).toMatchObject({
+      Authorization: 'Bearer test-key',
+    });
+    const providerBody = JSON.parse((init as RequestInit).body as string) as Record<
+      string,
+      unknown
+    >;
+    expect(providerBody).toEqual({
+      model: 'deepseek-v4.1-flash:free',
+      messages: [{ role: 'user', content: 'Return exactly: {"status":"ok"}' }],
+      stream: false,
+      max_tokens: 100,
+    });
+    const lines = timingLog.mock.calls.map(([message]) => String(message));
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        '[ai-timing] debug-minimal fetch-start',
+        expect.stringMatching(
+          /^\[ai-timing\] debug-minimal headers \d+ms status=200 x-request-id=debug-trace-1$/,
+        ),
+        expect.stringMatching(/^\[ai-timing\] debug-minimal body \d+ms bytes=\d+$/),
+        expect.stringMatching(/^\[ai-timing\] debug-minimal total \d+ms$/),
+      ]),
+    );
+    const joinedLogs = lines.join('\n');
+    expect(joinedLogs).not.toContain('do not forward this prompt');
+    expect(joinedLogs).not.toContain('not-an-instrument');
+    expect(joinedLogs).not.toContain('test-key');
+  });
+
+  it('probes provider models without sending a chat body', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response('{"data":[]}', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+    const response = await handleDebugProviderModels(
+      request('', 'GET', '/debug/provider-models'),
+      env,
+      { fetchImpl },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toMatchObject({
+      ok: true,
+      providerStatus: 200,
+      bodyBytes: expect.any(Number),
+    });
+    const [url, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(url).toBe('https://tokenharbor.ai/v1/models');
+    expect((init as RequestInit).method).toBe('GET');
+    expect((init as RequestInit).body).toBeUndefined();
+    expect((init as RequestInit).headers).toMatchObject({
+      Authorization: 'Bearer test-key',
+    });
   });
 
   it('rejects invalid JSON, blank prompts, oversized prompts, and unknown fields', async () => {
@@ -452,6 +549,31 @@ describe('Worker /generate boundary', () => {
       expect.arrayContaining([
         expect.stringMatching(/^\[ai-timing\] timeout after \d+ms stage=fetch$/),
         expect.stringMatching(/^\[ai-timing\] total \d+ms$/),
+      ]),
+    );
+  });
+
+  it('maps provider debug timeouts and logs the fetch stage', async () => {
+    const timingLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const slow = vi.fn(() => new Promise<Response>(() => undefined));
+    const timedOut = await handleDebugProviderMinimal(
+      request('', 'POST', '/debug/provider-minimal'),
+      env,
+      { fetchImpl: slow, timeoutMs: 5 },
+    );
+
+    expect(timedOut.status).toBe(504);
+    expect(await readJson(timedOut)).toEqual({
+      error: {
+        code: 'DEBUG_PROVIDER_TIMEOUT',
+        message: 'Provider debug request took too long.',
+      },
+    });
+    const lines = timingLog.mock.calls.map(([message]) => String(message));
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^\[ai-timing\] debug-minimal timeout after \d+ms stage=fetch$/),
+        expect.stringMatching(/^\[ai-timing\] debug-minimal total \d+ms$/),
       ]),
     );
   });
