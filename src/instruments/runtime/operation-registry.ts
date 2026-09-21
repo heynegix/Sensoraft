@@ -35,6 +35,7 @@ export interface OperationDefinition {
 }
 
 const MAX_WINDOW_SIZE = 500;
+export const MAX_SCALE_FACTOR = 1000;
 
 function assertKnownKeys(
   raw: Readonly<Record<string, unknown>>,
@@ -213,9 +214,15 @@ const scaleOperation: OperationDefinition = {
   supportedSensors: SUPPORTED_SENSOR_TYPES,
   normalize(raw, path): ScaleOperation {
     assertKnownKeys(raw, ['op', 'factor'], path);
+    const factor = readFiniteNumber(own(raw, 'factor'), path + '.factor');
+    if (Math.abs(factor) > MAX_SCALE_FACTOR) {
+      throw new InstrumentValidationError(
+        path + '.factor must be between -' + MAX_SCALE_FACTOR + ' and ' + MAX_SCALE_FACTOR + '.',
+      );
+    }
     return {
       op: 'scale',
-      factor: readFiniteNumber(own(raw, 'factor'), path + '.factor'),
+      factor,
     };
   },
   createProcessor(operation): CompiledOperation {
