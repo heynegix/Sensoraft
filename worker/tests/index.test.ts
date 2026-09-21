@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import worker, {
+  handleDebugProviderFullSystemMinimal,
   handleDebugProviderMinimal,
   handleDebugProviderModels,
+  handleDebugProviderShortSystemReal,
   handleGenerate,
 } from '../src/index';
 import { AI_TIMEOUT_MS, SYSTEM_INSTRUCTION } from '../src/schema';
@@ -90,6 +92,12 @@ describe('Worker /generate boundary', () => {
     await expect(
       worker.fetch(request('', 'POST', '/debug/provider-models'), env),
     ).resolves.toMatchObject({ status: 405 });
+    await expect(
+      worker.fetch(request('', 'GET', '/debug/provider-full-system-minimal'), env),
+    ).resolves.toMatchObject({ status: 405 });
+    await expect(
+      worker.fetch(request('', 'GET', '/debug/provider-short-system-real'), env),
+    ).resolves.toMatchObject({ status: 405 });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
@@ -172,6 +180,98 @@ describe('Worker /generate boundary', () => {
     expect((init as RequestInit).headers).toMatchObject({
       Authorization: 'Bearer test-key',
     });
+  });
+
+  it('sends the full system instruction with the minimal user message', async () => {
+    const timingLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response('not-an-instrument', {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' },
+      }),
+    );
+    const response = await handleDebugProviderFullSystemMinimal(
+      request(JSON.stringify({ prompt: 'ignored diagnostic input' })),
+      env,
+      { fetchImpl },
+    );
+
+    expect(response.status).toBe(200);
+    const [url, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(url).toBe('https://tokenharbor.ai/v1/chat/completions');
+    const providerBody = JSON.parse((init as RequestInit).body as string) as Record<
+      string,
+      unknown
+    >;
+    expect(providerBody).toEqual({
+      model: 'deepseek-v4.1-flash:free',
+      messages: [
+        { role: 'system', content: SYSTEM_INSTRUCTION },
+        { role: 'user', content: 'Return exactly: {"status":"ok"}' },
+      ],
+      thinking: { type: 'disabled' },
+      stream: false,
+      max_tokens: 100,
+    });
+    const lines = timingLog.mock.calls.map(([message]) => String(message));
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        '[ai-timing] debug-full-system-minimal fetch-start',
+        expect.stringMatching(/^\[ai-timing\] debug-full-system-minimal headers \d+ms status=200$/),
+        expect.stringMatching(/^\[ai-timing\] debug-full-system-minimal body \d+ms bytes=\d+$/),
+        expect.stringMatching(/^\[ai-timing\] debug-full-system-minimal total \d+ms$/),
+      ]),
+    );
+    const joinedLogs = lines.join('\n');
+    expect(joinedLogs).not.toContain('ignored diagnostic input');
+    expect(joinedLogs).not.toContain('not-an-instrument');
+    expect(joinedLogs).not.toContain('test-key');
+  });
+
+  it('sends the short system instruction with the real measurement prompt', async () => {
+    const timingLog = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response('not-an-instrument', {
+        status: 200,
+        headers: { 'Content-Type': 'text/plain' },
+      }),
+    );
+    const response = await handleDebugProviderShortSystemReal(
+      request('', 'POST', '/debug/provider-short-system-real'),
+      env,
+      { fetchImpl },
+    );
+
+    expect(response.status).toBe(200);
+    const [url, init] = fetchImpl.mock.calls[0] ?? [];
+    expect(url).toBe('https://tokenharbor.ai/v1/chat/completions');
+    const providerBody = JSON.parse((init as RequestInit).body as string) as Record<
+      string,
+      unknown
+    >;
+    expect(providerBody).toEqual({
+      model: 'deepseek-v4.1-flash:free',
+      messages: [
+        { role: 'system', content: 'You generate valid Sensoraft Instrument JSON only.' },
+        { role: 'user', content: 'How shaky is this desk?' },
+      ],
+      thinking: { type: 'disabled' },
+      stream: false,
+      max_tokens: 100,
+    });
+    const lines = timingLog.mock.calls.map(([message]) => String(message));
+    expect(lines).toEqual(
+      expect.arrayContaining([
+        '[ai-timing] debug-short-system-real fetch-start',
+        expect.stringMatching(/^\[ai-timing\] debug-short-system-real headers \d+ms status=200$/),
+        expect.stringMatching(/^\[ai-timing\] debug-short-system-real body \d+ms bytes=\d+$/),
+        expect.stringMatching(/^\[ai-timing\] debug-short-system-real total \d+ms$/),
+      ]),
+    );
+    const joinedLogs = lines.join('\n');
+    expect(joinedLogs).not.toContain('How shaky is this desk?');
+    expect(joinedLogs).not.toContain('not-an-instrument');
+    expect(joinedLogs).not.toContain('test-key');
   });
 
   it('rejects invalid JSON, blank prompts, oversized prompts, and unknown fields', async () => {

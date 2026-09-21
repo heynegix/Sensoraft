@@ -430,6 +430,22 @@ async function handleDebugProviderModels(
   return handleDebugProvider(request, env, 'models', dependencies);
 }
 
+async function handleDebugProviderFullSystemMinimal(
+  request: Request,
+  env: WorkerEnv,
+  dependencies: WorkerDependencies = {},
+): Promise<Response> {
+  return handleDebugProvider(request, env, 'full-system-minimal', dependencies);
+}
+
+async function handleDebugProviderShortSystemReal(
+  request: Request,
+  env: WorkerEnv,
+  dependencies: WorkerDependencies = {},
+): Promise<Response> {
+  return handleDebugProvider(request, env, 'short-system-real', dependencies);
+}
+
 function parseRequestBody(value: unknown): { prompt: string; repairIssues?: string[] } {
   if (!isPlainObject(value)) {
     throw new Error('invalid_body');
@@ -585,6 +601,28 @@ const worker = {
 
       return handleDebugProviderModels(request, env);
     }
+    if (url.pathname === '/debug/provider-full-system-minimal') {
+      if (request.method !== 'POST') {
+        return errorResponse(
+          'METHOD_NOT_ALLOWED',
+          'Use POST /debug/provider-full-system-minimal.',
+          405,
+        );
+      }
+
+      return handleDebugProviderFullSystemMinimal(request, env);
+    }
+    if (url.pathname === '/debug/provider-short-system-real') {
+      if (request.method !== 'POST') {
+        return errorResponse(
+          'METHOD_NOT_ALLOWED',
+          'Use POST /debug/provider-short-system-real.',
+          405,
+        );
+      }
+
+      return handleDebugProviderShortSystemReal(request, env);
+    }
     if (url.pathname !== '/generate') {
       return errorResponse('NOT_FOUND', 'Not found.', 404);
     }
@@ -597,8 +635,10 @@ const worker = {
 };
 
 export {
+  handleDebugProviderFullSystemMinimal,
   handleDebugProviderMinimal,
   handleDebugProviderModels,
+  handleDebugProviderShortSystemReal,
   handleGenerate,
   validateGenerationResult,
 };

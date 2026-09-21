@@ -1,12 +1,27 @@
 import { readTextWithLimit } from './body';
-import { DEFAULT_AI_MODEL, MAX_UPSTREAM_RESPONSE_BYTES, type WorkerEnv } from './schema';
+import {
+  DEFAULT_AI_MODEL,
+  MAX_UPSTREAM_RESPONSE_BYTES,
+  SYSTEM_INSTRUCTION,
+  type WorkerEnv,
+} from './schema';
 
 const TOKENHARBOR_CHAT_COMPLETIONS_URL = 'https://tokenharbor.ai/v1/chat/completions';
 const TOKENHARBOR_MODELS_URL = 'https://tokenharbor.ai/v1/models';
 const MINIMAL_PROMPT = 'Return exactly: {"status":"ok"}';
+const SHORT_SYSTEM_INSTRUCTION = 'You generate valid Sensoraft Instrument JSON only.';
+const REAL_MEASUREMENT_PROMPT = 'How shaky is this desk?';
 const SAFE_TRACE_HEADERS = ['x-request-id', 'x-trace-id', 'trace-id', 'cf-ray'] as const;
 
-export type DebugProviderTarget = 'minimal' | 'models';
+export type DebugProviderTarget =
+  'minimal' | 'models' | 'full-system-minimal' | 'short-system-real';
+
+const TIMING_LABELS: Record<DebugProviderTarget, string> = {
+  minimal: 'debug-minimal',
+  models: 'debug-models',
+  'full-system-minimal': 'debug-full-system-minimal',
+  'short-system-real': 'debug-short-system-real',
+};
 
 export interface DebugProviderResult {
   readonly ok: boolean;
@@ -29,8 +44,7 @@ export class DebugProviderError extends Error {
 }
 
 function writeTimingLog(target: DebugProviderTarget, message: string): void {
-  const label = target === 'minimal' ? 'debug-minimal' : 'debug-models';
-  console.log('[ai-timing] ' + label + ' ' + message);
+  console.log('[ai-timing] ' + TIMING_LABELS[target] + ' ' + message);
 }
 
 function getSafeTraceHeader(headers: Headers): string | undefined {
@@ -78,26 +92,41 @@ function createRequest(
   const headers: Record<string, string> = {
     Authorization: 'Bearer ' + env.TOKENHARBOR_API_KEY,
   };
-  if (target === 'minimal') {
+  if (target === 'models') {
     return {
-      url: TOKENHARBOR_CHAT_COMPLETIONS_URL,
-      init: {
-        method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: getConfiguredModel(env),
-          messages: [{ role: 'user', content: MINIMAL_PROMPT }],
-          stream: false,
-          max_tokens: 100,
-        }),
-        signal,
-      },
+      url: TOKENHARBOR_MODELS_URL,
+      init: { method: 'GET', headers, signal },
     };
   }
 
+  const isMinimal = target === 'minimal';
+  const messages = isMinimal
+    ? [{ role: 'user', content: MINIMAL_PROMPT }]
+    : [
+        {
+          role: 'system',
+          content: target === 'full-system-minimal' ? SYSTEM_INSTRUCTION : SHORT_SYSTEM_INSTRUCTION,
+        },
+        {
+          role: 'user',
+          content: target === 'full-system-minimal' ? MINIMAL_PROMPT : REAL_MEASUREMENT_PROMPT,
+        },
+      ];
+
   return {
-    url: TOKENHARBOR_MODELS_URL,
-    init: { method: 'GET', headers, signal },
+    url: TOKENHARBOR_CHAT_COMPLETIONS_URL,
+    init: {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: getConfiguredModel(env),
+        messages,
+        ...(isMinimal ? {} : { thinking: { type: 'disabled' } }),
+        stream: false,
+        max_tokens: 100,
+      }),
+      signal,
+    },
   };
 }
 
