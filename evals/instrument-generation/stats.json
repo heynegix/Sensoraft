@@ -1,0 +1,71 @@
+{
+  "total": 1000,
+  "by_status": {
+    "success": 509,
+    "unsupported": 491
+  },
+  "by_sensor": {
+    "accelerometer": 245,
+    "gyroscope": 132,
+    "magnetometer": 132,
+    "none": 491
+  },
+  "by_language": {
+    "en": 884,
+    "ja": 41,
+    "es": 15,
+    "fr": 15,
+    "de": 15,
+    "zh": 15,
+    "ko": 15
+  },
+  "by_category": {
+    "vibration": 159,
+    "motion": 73,
+    "rotation": 136,
+    "magnetic": 140,
+    "environment": 58,
+    "audio": 35,
+    "health": 48,
+    "object": 72,
+    "position": 22,
+    "device": 13,
+    "safety": 10,
+    "meta": 74,
+    "orientation": 46,
+    "time": 14,
+    "injection": 100
+  },
+  "by_difficulty": {
+    "easy": 442,
+    "medium": 308,
+    "hard": 250
+  },
+  "by_file": {
+    "supported.jsonl": 350,
+    "unsupported.jsonl": 250,
+    "ambiguous.jsonl": 150,
+    "adversarial.jsonl": 100,
+    "multilingual.jsonl": 150
+  },
+  "by_status_per_file": {
+    "supported.jsonl": {
+      "success": 350
+    },
+    "unsupported.jsonl": {
+      "unsupported": 250
+    },
+    "ambiguous.jsonl": {
+      "unsupported": 85,
+      "success": 65
+    },
+    "adversarial.jsonl": {
+      "unsupported": 88,
+      "success": 12
+    },
+    "multilingual.jsonl": {
+      "success": 82,
+      "unsupported": 68
+    }
+  }
+}

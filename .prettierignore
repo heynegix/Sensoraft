@@ -4,3 +4,4 @@ coverage/
 _expo-template/
 package-lock.json
 assets/
+*.jsonl
